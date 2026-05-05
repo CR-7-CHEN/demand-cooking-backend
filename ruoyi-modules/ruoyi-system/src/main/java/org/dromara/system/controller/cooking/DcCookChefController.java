@@ -1,14 +1,22 @@
 package org.dromara.system.controller.cooking;
 
+import cn.hutool.core.io.FileUtil;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.utils.StringUtils;
+import org.dromara.common.core.utils.file.MimeTypeUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
+import org.dromara.system.domain.vo.SysOssUploadVo;
+import org.dromara.system.domain.vo.SysOssVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefVo;
+import org.dromara.system.service.ISysOssService;
 import org.dromara.system.service.cooking.IDcCookChefService;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
 
@@ -17,6 +25,7 @@ import java.util.Arrays;
 public class DcCookChefController {
 
     private final IDcCookChefService chefService;
+    private final ISysOssService ossService;
 
     @GetMapping("/cooking/chef/list")
     public TableDataInfo<DcCookChefVo> list(DcCookChefBo bo, PageQuery pageQuery) {
@@ -85,6 +94,23 @@ public class DcCookChefController {
             bo.setUserId(LoginHelper.getUserId());
         }
         return chefService.insertByBo(bo) ? R.ok() : R.fail();
+    }
+
+    @PostMapping(value = "/cooking/chef/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<SysOssUploadVo> upload(@RequestPart("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return R.fail("上传图片不能为空");
+        }
+        String extension = FileUtil.extName(file.getOriginalFilename());
+        if (!StringUtils.equalsAnyIgnoreCase(extension, MimeTypeUtils.IMAGE_EXTENSION)) {
+            return R.fail("文件格式不正确，请上传" + Arrays.toString(MimeTypeUtils.IMAGE_EXTENSION) + "格式");
+        }
+        SysOssVo oss = ossService.upload(file);
+        SysOssUploadVo uploadVo = new SysOssUploadVo();
+        uploadVo.setUrl(oss.getUrl());
+        uploadVo.setFileName(oss.getOriginalName());
+        uploadVo.setOssId(oss.getOssId().toString());
+        return R.ok(uploadVo);
     }
 
     @PostMapping("/cooking/chef/pause")

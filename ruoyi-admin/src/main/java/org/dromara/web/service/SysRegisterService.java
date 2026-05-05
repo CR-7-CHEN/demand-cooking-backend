@@ -41,6 +41,13 @@ public class SysRegisterService {
      * 注册
      */
     public void register(RegisterBody registerBody) {
+        register(registerBody, true);
+    }
+
+    /**
+     * 注册
+     */
+    public void register(RegisterBody registerBody, boolean checkCaptcha) {
         String tenantId = registerBody.getTenantId();
         String username = registerBody.getUsername();
         String password = registerBody.getPassword();
@@ -49,7 +56,7 @@ public class SysRegisterService {
 
         boolean captchaEnabled = captchaProperties.getEnable();
         // 验证码开关
-        if (captchaEnabled) {
+        if (checkCaptcha && captchaEnabled) {
             validateCaptcha(tenantId, username, registerBody.getCode(), registerBody.getUuid());
         }
         SysUserBo sysUser = new SysUserBo();

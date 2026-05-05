@@ -13,6 +13,7 @@ import me.zhyd.oauth.model.AuthResponse;
 import me.zhyd.oauth.model.AuthUser;
 import me.zhyd.oauth.request.AuthRequest;
 import me.zhyd.oauth.utils.AuthStateUtils;
+import org.dromara.common.core.constant.CacheNames;
 import org.dromara.common.core.constant.SystemConstants;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.domain.model.LoginBody;
@@ -23,6 +24,7 @@ import org.dromara.common.encrypt.annotation.ApiEncrypt;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.ratelimiter.annotation.RateLimiter;
 import org.dromara.common.ratelimiter.enums.LimitType;
+import org.dromara.common.redis.utils.CacheUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.social.config.properties.SocialLoginConfigProperties;
 import org.dromara.common.social.config.properties.SocialProperties;
@@ -86,14 +88,23 @@ public class AuthController {
     @ApiEncrypt
     @PostMapping("/login")
     public R<LoginVo> login(@RequestBody String body) {
+        return doLogin(body, true);
+    }
+
+    @PostMapping("/app/login")
+    public R<LoginVo> appLogin(@RequestBody String body) {
+        return doLogin(body, false);
+    }
+
+    private R<LoginVo> doLogin(String body, boolean checkCaptcha) {
         LoginBody loginBody = JsonUtils.parseObject(body, LoginBody.class);
         ValidatorUtils.validate(loginBody);
         // 授权类型和客户端id
         String clientId = loginBody.getClientId();
         String grantType = loginBody.getGrantType();
-        SysClientVo client = clientService.queryByClientId(clientId);
+        SysClientVo client = queryClientWithCacheRefresh(clientId, grantType);
         // 查询不到 client 或 client 内不包含 grantType
-        if (ObjectUtil.isNull(client) || !StringUtils.contains(client.getGrantType(), grantType)) {
+        if (!supportsGrantType(client, grantType)) {
             log.info("客户端id: {} 认证类型：{} 异常!.", clientId, grantType);
             return R.fail(MessageUtils.message("auth.grant.type.error"));
         } else if (!SystemConstants.NORMAL.equals(client.getStatus())) {
@@ -102,16 +113,32 @@ public class AuthController {
         // 校验租户
         loginService.checkTenant(loginBody.getTenantId());
         // 登录
-        LoginVo loginVo = IAuthStrategy.login(body, client, grantType);
+        LoginVo loginVo = IAuthStrategy.login(body, client, grantType, checkCaptcha);
 
         Long userId = LoginHelper.getUserId();
         scheduledExecutorService.schedule(() -> {
             SseMessageDto dto = new SseMessageDto();
-            dto.setMessage(DateUtils.getTodayHour(new Date()) + "好，欢迎登录 RuoYi-Vue-Plus 后台管理系统");
+            dto.setMessage(DateUtils.getTodayHour(new Date()) + "好，欢迎登录 上门做饭管理系统");
             dto.setUserIds(List.of(userId));
             SseMessageUtils.publishMessage(dto);
         }, 5, TimeUnit.SECONDS);
         return R.ok(loginVo);
+    }
+
+    private SysClientVo queryClientWithCacheRefresh(String clientId, String grantType) {
+        SysClientVo client = clientService.queryByClientId(clientId);
+        if (supportsGrantType(client, grantType)) {
+            return client;
+        }
+        CacheUtils.evict(CacheNames.SYS_CLIENT, clientId);
+        return clientService.queryByClientId(clientId);
+    }
+
+    static boolean supportsGrantType(SysClientVo client, String grantType) {
+        if (ObjectUtil.isNull(client) || StringUtils.isBlank(grantType)) {
+            return false;
+        }
+        return StringUtils.splitList(client.getGrantType()).contains(grantType);
     }
 
     /**
@@ -193,6 +220,15 @@ public class AuthController {
             return R.fail("当前系统没有开启注册功能！");
         }
         registerService.register(user);
+        return R.ok();
+    }
+
+    @PostMapping("/app/register")
+    public R<Void> appRegister(@Validated @RequestBody RegisterBody user) {
+        if (!configService.selectRegisterEnabled(user.getTenantId())) {
+            return R.fail("当前系统没有开启注册功能！");
+        }
+        registerService.register(user, false);
         return R.ok();
     }
 

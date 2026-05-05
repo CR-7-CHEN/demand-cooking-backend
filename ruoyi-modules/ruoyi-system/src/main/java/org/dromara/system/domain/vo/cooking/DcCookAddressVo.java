@@ -25,6 +25,10 @@ public class DcCookAddressVo implements Serializable {
     @ExcelProperty(value = "User ID")
     private Long userId;
 
+    private String userName;
+
+    private String nickName;
+
     @ExcelProperty(value = "Contact")
     private String contactName;
 

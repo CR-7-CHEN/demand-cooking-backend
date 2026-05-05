@@ -29,4 +29,14 @@ public class PasswordLoginBody extends LoginBody {
 //    @Pattern(regexp = RegexConstants.PASSWORD, message = "{user.password.format.valid}")
     private String password;
 
+    /**
+     * 小程序id(多个小程序时使用)
+     */
+    private String appid;
+
+    /**
+     * 小程序code，账号密码登录成功后用于绑定微信 openid
+     */
+    private String xcxCode;
+
 }

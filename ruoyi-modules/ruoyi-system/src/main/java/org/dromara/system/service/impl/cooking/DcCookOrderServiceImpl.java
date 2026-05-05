@@ -9,6 +9,7 @@ import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
+import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.bo.cooking.DcCookOrderActionBo;
 import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
 import org.dromara.system.domain.cooking.DcCookAddress;
@@ -18,6 +19,7 @@ import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.vo.cooking.DcCookOrderCancelPreviewVo;
 import org.dromara.system.domain.vo.cooking.DcCookOrderVo;
+import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookAddressMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookMessageMapper;
@@ -34,7 +36,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Service
@@ -48,16 +53,22 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private final DcCookChefMapper chefMapper;
     private final DcCookAddressMapper addressMapper;
     private final DcCookMessageMapper messageMapper;
+    private final SysUserMapper userMapper;
     private final IDcCookConfigService configService;
 
     @Override
     public DcCookOrderVo queryById(Long orderId) {
-        return baseMapper.selectVoById(orderId);
+        DcCookOrderVo vo = baseMapper.selectVoById(orderId);
+        if (vo != null) {
+            hydrateDisplayNames(List.of(vo));
+        }
+        return vo;
     }
 
     @Override
     public TableDataInfo<DcCookOrderVo> queryPageList(DcCookOrderBo bo, PageQuery pageQuery) {
         Page<DcCookOrderVo> page = baseMapper.selectVoPage(pageQuery.build(), buildQueryWrapper(bo));
+        hydrateDisplayNames(page.getRecords());
         return TableDataInfo.build(page);
     }
 
@@ -387,5 +398,40 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         message.setSendStatus("SENT");
         message.setSendTime(new Date());
         messageMapper.insert(message);
+    }
+
+    private void hydrateDisplayNames(List<DcCookOrderVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<Long> userIds = records.stream()
+            .map(DcCookOrderVo::getUserId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<Long, SysUser> userMap = userIds.isEmpty() ? Map.of() : userMapper.selectList(Wrappers.lambdaQuery(SysUser.class)
+                .in(SysUser::getUserId, userIds))
+            .stream()
+            .collect(Collectors.toMap(SysUser::getUserId, user -> user, (left, right) -> left));
+        List<Long> chefIds = records.stream()
+            .map(DcCookOrderVo::getChefId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<Long, DcCookChef> chefMap = chefIds.isEmpty() ? Map.of() : chefMapper.selectList(Wrappers.lambdaQuery(DcCookChef.class)
+                .in(DcCookChef::getChefId, chefIds))
+            .stream()
+            .collect(Collectors.toMap(DcCookChef::getChefId, chef -> chef, (left, right) -> left));
+        records.forEach(record -> {
+            SysUser user = userMap.get(record.getUserId());
+            if (user != null) {
+                record.setUserName(user.getUserName());
+                record.setNickName(user.getNickName());
+            }
+            DcCookChef chef = chefMap.get(record.getChefId());
+            if (chef != null) {
+                record.setChefName(chef.getChefName());
+            }
+        });
     }
 }

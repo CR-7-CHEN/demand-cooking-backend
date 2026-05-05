@@ -20,9 +20,15 @@ public class DcCookReviewBo extends BaseEntity {
 
     private Long orderId;
 
+    private String orderNo;
+
     private Long userId;
 
+    private String userKeyword;
+
     private Long chefId;
+
+    private String chefName;
 
     private BigDecimal rating;
 

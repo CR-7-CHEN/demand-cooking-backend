@@ -34,6 +34,8 @@ public class DcCookChefBo extends BaseEntity {
 
     private String avatarUrl;
 
+    private String workImageUrls;
+
     private Long areaId;
 
     private String areaName;

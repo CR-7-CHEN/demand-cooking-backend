@@ -30,6 +30,8 @@ public class DcCookChef extends TenantEntity {
 
     private String avatarUrl;
 
+    private String workImageUrls;
+
     private Long areaId;
 
     private String areaName;

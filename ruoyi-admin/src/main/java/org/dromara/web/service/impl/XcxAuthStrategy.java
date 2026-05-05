@@ -2,6 +2,8 @@ package org.dromara.web.service.impl;
 
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.stp.parameter.SaLoginParameter;
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,18 +15,28 @@ import me.zhyd.oauth.model.AuthUser;
 import me.zhyd.oauth.request.AuthRequest;
 import me.zhyd.oauth.request.AuthWechatMiniProgramRequest;
 import org.dromara.common.core.constant.SystemConstants;
+import org.dromara.common.core.domain.model.LoginUser;
 import org.dromara.common.core.domain.model.XcxLoginBody;
 import org.dromara.common.core.domain.model.XcxLoginUser;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.core.exception.user.UserException;
+import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.utils.ValidatorUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
+import org.dromara.common.tenant.helper.TenantHelper;
 import org.dromara.system.domain.vo.SysClientVo;
+import org.dromara.system.domain.vo.SysSocialVo;
 import org.dromara.system.domain.vo.SysUserVo;
+import org.dromara.system.service.ISysSocialService;
+import org.dromara.system.service.ISysUserService;
 import org.dromara.web.domain.vo.LoginVo;
 import org.dromara.web.service.IAuthStrategy;
 import org.dromara.web.service.SysLoginService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 /**
  * 小程序认证策略
@@ -36,7 +48,17 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class XcxAuthStrategy implements IAuthStrategy {
 
+    private static final String MINI_PROGRAM_SOURCE = "wechat_miniprogram";
+
     private final SysLoginService loginService;
+    private final ISysSocialService socialService;
+    private final ISysUserService userService;
+
+    @Value("${wechat.mini-program.appid:}")
+    private String wechatAppid;
+
+    @Value("${wechat.mini-program.secret:}")
+    private String wechatSecret;
 
     @Override
     public LoginVo login(String body, SysClientVo client) {
@@ -45,11 +67,12 @@ public class XcxAuthStrategy implements IAuthStrategy {
         // xcxCode 为 小程序调用 wx.login 授权后获取
         String xcxCode = loginBody.getXcxCode();
         // 多个小程序识别使用
-        String appid = loginBody.getAppid();
+        String appid = StringUtils.isNotBlank(loginBody.getAppid()) ? loginBody.getAppid() : wechatAppid;
+        validateWechatConfig(appid);
 
         // 校验 appid + appsrcret + xcxCode 调用登录凭证校验接口 获取 session_key 与 openid
         AuthRequest authRequest = new AuthWechatMiniProgramRequest(AuthConfig.builder()
-            .clientId(appid).clientSecret("自行填写密钥 可根据不同appid填入不同密钥")
+            .clientId(appid).clientSecret(wechatSecret)
             .ignoreCheckRedirectUri(true).ignoreCheckState(true).build());
         AuthCallback authCallback = new AuthCallback();
         authCallback.setCode(xcxCode);
@@ -64,17 +87,11 @@ public class XcxAuthStrategy implements IAuthStrategy {
             throw new ServiceException(resp.getMsg());
         }
         // 框架登录不限制从什么表查询 只要最终构建出 LoginUser 即可
-        SysUserVo user = loadUserByOpenid(openid);
+        SysUserVo user = loadUserByOpenid(loginBody.getTenantId(), openid);
         // 此处可根据登录用户的数据不同 自行创建 loginUser 属性不够用继承扩展就行了
-        XcxLoginUser loginUser = new XcxLoginUser();
-        loginUser.setTenantId(user.getTenantId());
-        loginUser.setUserId(user.getUserId());
-        loginUser.setUsername(user.getUserName());
-        loginUser.setNickname(user.getNickName());
-        loginUser.setUserType(user.getUserType());
+        XcxLoginUser loginUser = buildLoginUser(user, openid);
         loginUser.setClientKey(client.getClientKey());
         loginUser.setDeviceType(client.getDeviceType());
-        loginUser.setOpenid(openid);
 
         SaLoginParameter model = new SaLoginParameter();
         model.setDeviceType(client.getDeviceType());
@@ -94,18 +111,68 @@ public class XcxAuthStrategy implements IAuthStrategy {
         return loginVo;
     }
 
-    private SysUserVo loadUserByOpenid(String openid) {
-        // 使用 openid 查询绑定用户 如未绑定用户 则根据业务自行处理 例如 创建默认用户
-        // todo 自行实现 userService.selectUserByOpenid(openid);
-        SysUserVo user = new SysUserVo();
+    private void validateWechatConfig(String appid) {
+        if (StringUtils.isBlank(appid) || StringUtils.isBlank(wechatSecret)) {
+            throw new ServiceException("微信小程序配置不完整");
+        }
+        if (StringUtils.isNotBlank(wechatAppid) && !StringUtils.equals(wechatAppid, appid)) {
+            throw new ServiceException("微信小程序 appid 不匹配");
+        }
+    }
+
+    private XcxLoginUser buildLoginUser(SysUserVo user, String openid) {
+        LoginUser baseLoginUser = loginService.buildLoginUser(user);
+        XcxLoginUser loginUser = new XcxLoginUser();
+        BeanUtil.copyProperties(baseLoginUser, loginUser);
+        loginUser.setOpenid(openid);
+        return loginUser;
+    }
+
+    private SysUserVo loadUserByOpenid(String tenantId, String openid) {
+        List<SysSocialVo> socialList = queryBindingsByOpenid(openid);
+        if (CollUtil.isEmpty(socialList)) {
+            log.info("微信小程序 openid：{} 未绑定账号.", openid);
+            throw new ServiceException("请绑定账号");
+        }
+        SysSocialVo social = selectTenantBinding(socialList, tenantId, openid);
+        return TenantHelper.dynamic(social.getTenantId(), () ->
+            validateUser(userService.selectUserById(social.getUserId()), openid));
+    }
+
+    private List<SysSocialVo> queryBindingsByOpenid(String openid) {
+        List<SysSocialVo> socialList = socialService.selectByAuthId(buildAuthId(openid));
+        if (CollUtil.isNotEmpty(socialList)) {
+            return socialList;
+        }
+        return socialService.selectByAuthId(MINI_PROGRAM_SOURCE + openid);
+    }
+
+    private SysSocialVo selectTenantBinding(List<SysSocialVo> socialList, String tenantId, String openid) {
+        if (StringUtils.isBlank(tenantId)) {
+            return socialList.get(0);
+        }
+        return socialList.stream()
+            .filter(item -> StringUtils.equals(tenantId, item.getTenantId()))
+            .findFirst()
+            .orElseThrow(() -> {
+                log.info("微信小程序 openid：{} 未绑定当前租户账号.", openid);
+                return new ServiceException("请绑定账号");
+            });
+    }
+
+    private SysUserVo validateUser(SysUserVo user, String openid) {
         if (ObjectUtil.isNull(user)) {
             log.info("登录用户：{} 不存在.", openid);
-            // todo 用户不存在 业务逻辑自行实现
+            throw new UserException("user.not.exists", openid);
         } else if (SystemConstants.DISABLE.equals(user.getStatus())) {
             log.info("登录用户：{} 已被停用.", openid);
-            // todo 用户已被停用 业务逻辑自行实现
+            throw new UserException("user.blocked", openid);
         }
         return user;
+    }
+
+    private String buildAuthId(String openid) {
+        return MINI_PROGRAM_SOURCE + ":" + openid;
     }
 
 }

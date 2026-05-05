@@ -27,7 +27,13 @@ public class DcCookReviewVo implements Serializable {
 
     private Long userId;
 
+    private String userName;
+
+    private String nickName;
+
     private Long chefId;
+
+    private String chefName;
 
     private BigDecimal rating;
 

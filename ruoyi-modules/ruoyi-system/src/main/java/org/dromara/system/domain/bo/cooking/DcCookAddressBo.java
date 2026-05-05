@@ -22,6 +22,8 @@ public class DcCookAddressBo extends BaseEntity {
     @NotNull(message = "userId is required")
     private Long userId;
 
+    private String userKeyword;
+
     @NotBlank(message = "contactName is required")
     @Size(max = 64, message = "contactName max length is 64")
     private String contactName;
