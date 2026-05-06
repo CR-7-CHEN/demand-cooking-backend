@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_chef (
     tenant_id               varchar(20)   DEFAULT '000000' COMMENT '租户ID',
     user_id                 bigint(20)    DEFAULT NULL COMMENT '关联系统用户ID',
     chef_name               varchar(80)   NOT NULL COMMENT '厨师姓名',
-    gender                  char(1)       DEFAULT NULL COMMENT '性别',
+    gender                  char(1)       DEFAULT NULL COMMENT '性别（0男 1女 2未知）',
     age                     int           DEFAULT NULL COMMENT '年龄',
     mobile                  varchar(20)   NOT NULL COMMENT '手机号',
     avatar_url              varchar(500)  DEFAULT NULL COMMENT '头像地址',

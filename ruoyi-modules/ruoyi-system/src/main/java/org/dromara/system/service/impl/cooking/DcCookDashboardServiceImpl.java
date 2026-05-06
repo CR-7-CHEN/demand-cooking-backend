@@ -19,9 +19,9 @@ import org.dromara.system.service.cooking.IDcCookDashboardService;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -38,6 +38,9 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
     private static final String AUDIT_APPROVED = "1";
     private static final String CHEF_STATUS_NORMAL = "0";
     private static final String CHEF_STATUS_RESIGNED = "3";
+    private static final String TREND_MODE_WEEK = "week";
+    private static final DateTimeFormatter TREND_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter TREND_LABEL_FORMAT = DateTimeFormatter.ofPattern("MM.dd");
     private static final List<String> PAID_ORDER_STATUSES = Arrays.asList(
         DcCookOrderStatus.WAITING_SERVICE,
         DcCookOrderStatus.WAITING_CONFIRM,
@@ -55,9 +58,10 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
         LocalDate today = LocalDate.now();
         Date todayStart = toDate(today);
         Date tomorrowStart = toDate(today.plusDays(1));
+        String normalizedTrendMode = normalizeTrendMode(trendMode);
 
         DcCookDashboardOverviewVo vo = new DcCookDashboardOverviewVo();
-        vo.setTrendMode(normalizeTrendMode(trendMode));
+        vo.setTrendMode(normalizedTrendMode);
         vo.setTodayOrders(countTodayOrders(todayStart, tomorrowStart));
         vo.setTodayRevenue(sumRevenue(todayStart, tomorrowStart));
         vo.setServiceChefCount(countServiceChefs());
@@ -129,12 +133,11 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
         }
 
         List<DcCookDashboardOverviewVo.TrendItem> trend = new ArrayList<>(7);
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
         for (int i = 0; i < 7; i++) {
             LocalDate date = firstDate.plusDays(i);
             DcCookDashboardOverviewVo.TrendItem item = new DcCookDashboardOverviewVo.TrendItem();
-            item.setLabel(WEEK_LABELS[date.getDayOfWeek().getValue() - 1]);
-            item.setDate(dateFormat.format(toDate(date)));
+            item.setLabel(TREND_LABEL_FORMAT.format(date));
+            item.setDate(TREND_DATE_FORMAT.format(date));
             item.setAmount(amountMap.getOrDefault(date, BigDecimal.ZERO));
             trend.add(item);
         }
@@ -216,7 +219,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
     }
 
     private String normalizeTrendMode(String trendMode) {
-        return trendMode == null || trendMode.trim().isEmpty() ? "week" : trendMode;
+        return TREND_MODE_WEEK;
     }
 
     private Date toDate(LocalDate date) {

@@ -3,6 +3,8 @@ package org.dromara.system.service.cooking;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
+import org.dromara.system.domain.vo.cooking.DcCookChefCommissionOrdersVo;
+import org.dromara.system.domain.vo.cooking.DcCookChefWorkbenchVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefVo;
 
 import java.util.Collection;
@@ -15,6 +17,10 @@ public interface IDcCookChefService {
     DcCookChefVo queryDisplayById(Long chefId);
 
     DcCookChefVo queryByUserId(Long userId);
+
+    DcCookChefWorkbenchVo queryWorkbench(Long userId);
+
+    DcCookChefCommissionOrdersVo queryCommissionOrders(Long userId, String month);
 
     TableDataInfo<DcCookChefVo> queryPageList(DcCookChefBo bo, PageQuery pageQuery);
 
