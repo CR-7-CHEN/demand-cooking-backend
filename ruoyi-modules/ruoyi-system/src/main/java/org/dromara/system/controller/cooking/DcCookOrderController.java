@@ -1,7 +1,9 @@
 package org.dromara.system.controller.cooking;
 
 import lombok.RequiredArgsConstructor;
+import org.dromara.common.core.enums.UserType;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.common.satoken.utils.LoginHelper;
@@ -29,83 +31,158 @@ public class DcCookOrderController {
 
     @GetMapping("/my/list")
     public TableDataInfo<DcCookOrderVo> myList(DcCookOrderBo bo, PageQuery pageQuery) {
-        if (bo.getUserId() == null) {
-            bo.setUserId(LoginHelper.getUserId());
-        }
+        bo.setUserId(LoginHelper.getUserId());
         return orderService.queryPageList(bo, pageQuery);
     }
 
     @GetMapping("/chef/list")
     public TableDataInfo<DcCookOrderVo> chefList(DcCookOrderBo bo, PageQuery pageQuery) {
-        if (bo.getChefId() == null) {
-            DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
-            if (chef != null) {
-                bo.setChefId(chef.getChefId());
-            }
-        }
+        DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
+        bo.setChefId(chef == null ? -1L : chef.getChefId());
         return orderService.queryPageList(bo, pageQuery);
     }
 
     @GetMapping("/{orderId}")
     public R<DcCookOrderVo> getInfo(@PathVariable Long orderId) {
-        return R.ok(orderService.queryById(orderId));
+        DcCookOrderVo order = orderService.queryById(orderId);
+        assertAppOrderReadable(order);
+        return R.ok(order);
     }
 
     @GetMapping("/detail/{orderId}")
     public R<DcCookOrderVo> detail(@PathVariable Long orderId) {
-        return R.ok(orderService.queryById(orderId));
+        DcCookOrderVo order = orderService.queryById(orderId);
+        assertAppOrderReadable(order);
+        return R.ok(order);
     }
 
     @PostMapping("/submit")
     public R<DcCookOrderVo> submit(@RequestBody DcCookOrderBo bo) {
-        if (bo.getUserId() == null) {
-            bo.setUserId(LoginHelper.getUserId());
-        }
+        bo.setUserId(LoginHelper.getUserId());
         return R.ok(orderService.submit(bo));
     }
 
     @PostMapping({"/quote", "/chef/quote"})
     public R<Void> quote(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertChefOrder(bo);
+        }
         return orderService.quote(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping({"/reject", "/chef/reject"})
     public R<Void> reject(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertChefOrder(bo);
+        }
         return orderService.reject(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping("/objection")
     public R<Void> objection(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertUserOrder(bo);
+            bo.setUserId(LoginHelper.getUserId());
+        }
         return orderService.objection(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping("/pay/success")
     public R<Void> paySuccess(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertUserOrder(bo);
+            bo.setUserId(LoginHelper.getUserId());
+        }
         return orderService.paySuccess(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping({"/serviceComplete", "/chef/serviceComplete"})
     public R<Void> serviceComplete(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertChefOrder(bo);
+        }
         return orderService.serviceComplete(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping({"/confirm", "/user/confirm"})
     public R<Void> confirm(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertUserOrder(bo);
+            bo.setUserId(LoginHelper.getUserId());
+        }
         return orderService.confirm(bo) ? R.ok() : R.fail();
     }
 
     @GetMapping("/user/cancel/preview/{orderId}")
     public R<DcCookOrderCancelPreviewVo> previewUserCancel(@PathVariable Long orderId) {
+        if (isAppUser()) {
+            assertUserOrder(orderId);
+        }
         return R.ok(orderService.previewUserCancel(orderId));
     }
 
     @PostMapping("/user/cancel")
     public R<Void> userCancel(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertUserOrder(bo);
+            bo.setUserId(LoginHelper.getUserId());
+        }
         return orderService.userCancel(bo) ? R.ok() : R.fail();
     }
 
     @PostMapping("/chef/cancel")
     public R<Void> chefCancel(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertChefOrder(bo);
+        }
         return orderService.chefCancel(bo) ? R.ok() : R.fail();
+    }
+
+    private void assertAppOrderReadable(DcCookOrderVo order) {
+        if (order == null || !isAppUser()) {
+            return;
+        }
+        Long loginUserId = LoginHelper.getUserId();
+        DcCookChefVo chef = chefService.queryByUserId(loginUserId);
+        boolean readable = DcCookPermissionHelper.ownsOrder(loginUserId, order.getUserId())
+            || DcCookPermissionHelper.servesOrder(chef == null ? null : chef.getChefId(), order.getChefId());
+        if (!readable) {
+            throw new ServiceException("no permission to access this order");
+        }
+    }
+
+    private void assertUserOrder(DcCookOrderActionBo bo) {
+        assertUserOrder(bo.getOrderId());
+    }
+
+    private void assertUserOrder(Long orderId) {
+        if (orderId == null) {
+            throw new ServiceException("orderId is required");
+        }
+        DcCookOrderVo order = orderService.queryById(orderId);
+        if (order == null || !DcCookPermissionHelper.ownsOrder(LoginHelper.getUserId(), order.getUserId())) {
+            throw new ServiceException("no permission to operate this order");
+        }
+    }
+
+    private void assertChefOrder(DcCookOrderActionBo bo) {
+        if (bo.getOrderId() == null) {
+            throw new ServiceException("orderId is required");
+        }
+        DcCookOrderVo order = orderService.queryById(bo.getOrderId());
+        DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
+        Long chefId = chef == null ? null : chef.getChefId();
+        if (order == null || !DcCookPermissionHelper.servesOrder(chefId, order.getChefId())) {
+            throw new ServiceException("no permission to operate this order");
+        }
+        bo.setChefId(chefId);
+    }
+
+    private boolean isAppUser() {
+        try {
+            return UserType.APP_USER.equals(LoginHelper.getUserType());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

@@ -11,21 +11,27 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.cooking.DcCookChef;
+import org.dromara.system.domain.cooking.DcCookChefTime;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.vo.cooking.DcCookChefVo;
+import org.dromara.system.domain.vo.cooking.DcCookChefTimeVo;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
+import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
 import org.dromara.system.service.cooking.IDcCookChefService;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Service
@@ -40,17 +46,26 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private static final String STATUS_RESIGNED = "3";
 
     private final DcCookChefMapper baseMapper;
+    private final DcCookChefTimeMapper chefTimeMapper;
     private final DcCookOrderMapper orderMapper;
 
     @Override
     public DcCookChefVo queryById(Long chefId) {
-        return baseMapper.selectVoById(chefId);
+        DcCookChefVo vo = baseMapper.selectVoById(chefId);
+        if (vo != null) {
+            hydrateAvailableTimes(List.of(vo));
+        }
+        return vo;
     }
 
     @Override
     public DcCookChefVo queryDisplayById(Long chefId) {
-        return baseMapper.selectVoOne(buildAppWrapper(new DcCookChefBo())
+        DcCookChefVo vo = baseMapper.selectVoOne(buildAppWrapper(new DcCookChefBo())
             .eq(DcCookChef::getChefId, chefId), false);
+        if (vo != null) {
+            hydrateAvailableTimes(List.of(vo));
+        }
+        return vo;
     }
 
     @Override
@@ -73,6 +88,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     @Override
     public TableDataInfo<DcCookChefVo> queryAppPageList(DcCookChefBo bo, PageQuery pageQuery) {
         Page<DcCookChefVo> page = baseMapper.selectVoPage(pageQuery.build(), buildAppWrapper(bo));
+        hydrateAvailableTimes(page.getRecords());
         return TableDataInfo.build(page);
     }
 
@@ -246,5 +262,45 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         return orderMapper.exists(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
             .notIn(DcCookOrder::getStatus, DcCookOrderStatus.TERMINAL_STATUSES));
+    }
+
+    private void hydrateAvailableTimes(List<DcCookChefVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<Long> chefIds = records.stream()
+            .filter(Objects::nonNull)
+            .map(DcCookChefVo::getChefId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+        if (chefIds.isEmpty()) {
+            return;
+        }
+        List<DcCookChefTimeVo> times = chefTimeMapper.selectVoList(Wrappers.lambdaQuery(DcCookChefTime.class)
+            .in(DcCookChefTime::getChefId, chefIds)
+            .eq(DcCookChefTime::getStatus, "0")
+            .ge(DcCookChefTime::getEndTime, new Date())
+            .orderByAsc(DcCookChefTime::getStartTime));
+        Map<Long, List<DcCookChefTimeVo>> timeMap = times.stream()
+            .collect(Collectors.groupingBy(DcCookChefTimeVo::getChefId));
+        records.stream()
+            .filter(Objects::nonNull)
+            .forEach(record -> {
+                List<DcCookChefTimeVo> chefTimes = timeMap.getOrDefault(record.getChefId(), List.of());
+                record.setAvailableTimes(chefTimes);
+                record.setAvailableTimeText(formatAvailableTimeText(chefTimes));
+            });
+    }
+
+    private String formatAvailableTimeText(List<DcCookChefTimeVo> times) {
+        if (times == null || times.isEmpty()) {
+            return "";
+        }
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+        return times.stream()
+            .limit(3)
+            .map(item -> format.format(item.getStartTime()) + " - " + format.format(item.getEndTime()))
+            .collect(Collectors.joining("; "));
     }
 }

@@ -224,12 +224,26 @@ public class AuthController {
     }
 
     @PostMapping("/app/register")
-    public R<Void> appRegister(@Validated @RequestBody RegisterBody user) {
+    public R<LoginVo> appRegister(@Validated @RequestBody RegisterBody user) {
         if (!configService.selectRegisterEnabled(user.getTenantId())) {
             return R.fail("当前系统没有开启注册功能！");
         }
+        String clientId = user.getClientId();
+        String grantType = user.getGrantType();
+        SysClientVo client = queryClientWithCacheRefresh(clientId, grantType);
+        if (!supportsGrantType(client, grantType)) {
+            log.info("客户端id: {} 认证类型：{} 异常!.", clientId, grantType);
+            return R.fail(MessageUtils.message("auth.grant.type.error"));
+        } else if (!SystemConstants.NORMAL.equals(client.getStatus())) {
+            return R.fail(MessageUtils.message("auth.grant.type.blocked"));
+        }
+        loginService.checkTenant(user.getTenantId());
         registerService.register(user, false);
-        return R.ok();
+        return R.ok(loginRegisteredAppUser(user, client));
+    }
+
+    protected LoginVo loginRegisteredAppUser(RegisterBody user, SysClientVo client) {
+        return IAuthStrategy.login(JsonUtils.toJsonString(user), client, user.getGrantType(), false);
     }
 
     /**

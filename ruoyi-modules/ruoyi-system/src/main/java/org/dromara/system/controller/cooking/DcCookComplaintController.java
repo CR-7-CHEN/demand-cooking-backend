@@ -29,9 +29,7 @@ public class DcCookComplaintController {
 
     @PostMapping
     public R<Void> submit(@RequestBody DcCookComplaintBo bo) {
-        if (bo.getUserId() == null) {
-            bo.setUserId(LoginHelper.getUserId());
-        }
+        bo.setUserId(LoginHelper.getUserId());
         return complaintService.submit(bo) ? R.ok() : R.fail();
     }
 

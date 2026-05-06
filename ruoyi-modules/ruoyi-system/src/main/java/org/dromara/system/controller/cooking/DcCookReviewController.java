@@ -29,9 +29,7 @@ public class DcCookReviewController {
 
     @PostMapping
     public R<Void> submit(@RequestBody DcCookReviewBo bo) {
-        if (bo.getUserId() == null) {
-            bo.setUserId(LoginHelper.getUserId());
-        }
+        bo.setUserId(LoginHelper.getUserId());
         return reviewService.submit(bo) ? R.ok() : R.fail();
     }
 

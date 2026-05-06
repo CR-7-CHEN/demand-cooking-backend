@@ -98,7 +98,9 @@ public class DcCookAddressServiceImpl implements IDcCookAddressService {
         DcCookAddress update = new DcCookAddress();
         update.setAddressId(addressId);
         update.setDefaultFlag(YES);
-        return baseMapper.updateById(update) > 0;
+        return baseMapper.update(update, Wrappers.lambdaUpdate(DcCookAddress.class)
+            .eq(DcCookAddress::getAddressId, addressId)
+            .eq(DcCookAddress::getUserId, userId)) > 0;
     }
 
     @Override

@@ -61,6 +61,9 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
         if (order == null || !DcCookOrderStatus.COMPLETED.equals(order.getStatus())) {
             throw new ServiceException("only completed order can be reviewed");
         }
+        if (!Objects.equals(order.getUserId(), bo.getUserId())) {
+            throw new ServiceException("no permission to review this order");
+        }
         boolean exists = baseMapper.exists(Wrappers.lambdaQuery(DcCookReview.class)
             .eq(DcCookReview::getOrderId, bo.getOrderId()));
         if (exists) {

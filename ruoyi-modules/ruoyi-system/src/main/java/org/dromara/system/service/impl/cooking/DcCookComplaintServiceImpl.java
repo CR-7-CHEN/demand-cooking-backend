@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Map;
+import java.util.Objects;
 
 @RequiredArgsConstructor
 @Service
@@ -51,6 +52,9 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
         DcCookOrder order = orderMapper.selectById(bo.getOrderId());
         if (order == null || !DcCookOrderStatus.COMPLETED.equals(order.getStatus())) {
             throw new ServiceException("only completed order can be complained");
+        }
+        if (!Objects.equals(order.getUserId(), bo.getUserId())) {
+            throw new ServiceException("no permission to complain this order");
         }
         DcCookComplaint add = MapstructUtils.convert(bo, DcCookComplaint.class);
         add.setOrderNo(order.getOrderNo());

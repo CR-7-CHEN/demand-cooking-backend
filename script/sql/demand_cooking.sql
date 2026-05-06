@@ -50,9 +50,9 @@ CREATE TABLE IF NOT EXISTS dc_cook_chef (
     rating                  decimal(3,2)  DEFAULT 5.00 COMMENT '平均评分',
     completed_orders        bigint(20)    DEFAULT 0 COMMENT '已完成订单数',
     recommend_flag          char(1)       DEFAULT '0' COMMENT '推荐标志（1推荐）',
-    audit_status            varchar(30)   DEFAULT 'PENDING' COMMENT '审核状态（PENDING待审核 APPROVED已通过 REJECTED已拒绝）',
+    audit_status            varchar(30)   DEFAULT '0' COMMENT '审核状态（0待审核 1已通过 2已拒绝）',
     audit_reason            varchar(500)  DEFAULT NULL COMMENT '审核原因',
-    chef_status             varchar(30)   DEFAULT 'PENDING_REVIEW' COMMENT '厨师状态（APPROVED正常 PAUSED暂停 DISABLED禁用 RESIGNED离职）',
+    chef_status             varchar(30)   DEFAULT '0' COMMENT '厨师状态（0正常 1暂停 2禁用 3离职）',
     create_dept             bigint(20)    DEFAULT NULL COMMENT '创建部门',
     create_by               bigint(20)    DEFAULT NULL COMMENT '创建者',
     create_time             datetime      DEFAULT NULL COMMENT '创建时间',
@@ -66,6 +66,24 @@ CREATE TABLE IF NOT EXISTS dc_cook_chef (
     KEY idx_dc_cook_chef_area_status (tenant_id, area_id, audit_status, chef_status, del_flag),
     KEY idx_dc_cook_chef_sort (tenant_id, recommend_flag, completed_orders, rating)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='厨师表';
+
+CREATE TABLE IF NOT EXISTS dc_cook_chef_time (
+    time_id     bigint(20)   NOT NULL COMMENT '可预约时间ID',
+    tenant_id   varchar(20)  DEFAULT '000000' COMMENT '租户ID',
+    chef_id     bigint(20)   NOT NULL COMMENT '厨师ID',
+    start_time  datetime     NOT NULL COMMENT '可预约开始时间',
+    end_time    datetime     NOT NULL COMMENT '可预约结束时间',
+    status      char(1)      DEFAULT '0' COMMENT '状态（0启用 1停用）',
+    create_dept bigint(20)   DEFAULT NULL COMMENT '创建部门',
+    create_by   bigint(20)   DEFAULT NULL COMMENT '创建者',
+    create_time datetime     DEFAULT NULL COMMENT '创建时间',
+    update_by   bigint(20)   DEFAULT NULL COMMENT '更新者',
+    update_time datetime     DEFAULT NULL COMMENT '更新时间',
+    remark      varchar(500) DEFAULT NULL COMMENT '备注',
+    del_flag    char(1)      DEFAULT '0' COMMENT '删除标志',
+    PRIMARY KEY (time_id),
+    KEY idx_dc_cook_chef_time_chef (tenant_id, chef_id, start_time, end_time, status, del_flag)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='厨师可预约时间表';
 
 CREATE TABLE IF NOT EXISTS dc_cook_address (
     address_id        bigint(20)    NOT NULL COMMENT '地址ID',
@@ -337,6 +355,7 @@ DELETE FROM dc_cook_config WHERE config_key IN (
     'cooking.service.duration.hours',
     'cooking.reserve.min.advance.minutes',
     'cooking.reserve.future.days',
+    'cooking.confirm.timeout.hours',
     'cooking.sms.template.quote',
     'cooking.sms.template.service.reminder',
     'cooking.commission.announcement'
@@ -352,9 +371,10 @@ VALUES
 (300005, '000000', '服务时长(小时)', 'cooking.service.duration.hours', '3', 'NUMBER', 'RESERVE', '1', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '每次预约锁定3小时'),
 (300006, '000000', '最少提前预约时间(分钟)', 'cooking.reserve.min.advance.minutes', '60', 'NUMBER', 'RESERVE', '1', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '用户不能预约即时或过去的时间'),
 (300007, '000000', '可预约未来天数', 'cooking.reserve.future.days', '3', 'NUMBER', 'RESERVE', '1', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '用户可预约未来3天内的时间'),
-(300008, '000000', '报价短信模板', 'cooking.sms.template.quote', '您的上门做饭服务报价已生成，请及时查看。', 'STRING', 'MESSAGE', '0', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '短信模板占位'),
-(300009, '000000', '服务提醒短信模板', 'cooking.sms.template.service.reminder', '您的上门做饭服务将在30分钟后开始，请做好准备。', 'STRING', 'MESSAGE', '0', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '短信模板占位'),
-(300010, '000000', '抽成公告', 'cooking.commission.announcement', '平台抽成比例为20%。', 'STRING', 'ANNOUNCEMENT', '0', NOW(), 'PUBLISHED', '初始默认值', '平台抽成比例为20%。', 103, 1, NOW(), NULL, NULL, '工作台公告');
+(300008, '000000', '用户确认超时时间(小时)', 'cooking.confirm.timeout.hours', '24', 'NUMBER', 'ORDER', '1', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '服务完成后用户未确认则自动完成'),
+(300009, '000000', '报价短信模板', 'cooking.sms.template.quote', '您的上门做饭服务报价已生成，请及时查看。', 'STRING', 'MESSAGE', '0', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '短信模板占位'),
+(300010, '000000', '服务提醒短信模板', 'cooking.sms.template.service.reminder', '您的上门做饭服务将在30分钟后开始，请做好准备。', 'STRING', 'MESSAGE', '0', NOW(), 'PUBLISHED', '初始默认值', NULL, 103, 1, NOW(), NULL, NULL, '短信模板占位'),
+(300011, '000000', '抽成公告', 'cooking.commission.announcement', '平台抽成比例为20%。', 'STRING', 'ANNOUNCEMENT', '0', NOW(), 'PUBLISHED', '初始默认值', '平台抽成比例为20%。', 103, 1, NOW(), NULL, NULL, '工作台公告');
 
 -- ----------------------------
 -- 种子数据（本地测试用）

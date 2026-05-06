@@ -34,4 +34,14 @@ public class RegisterBody extends LoginBody {
      */
     private String userType;
 
+    /**
+     * Mini program appid, used when multiple mini programs are configured.
+     */
+    private String appid;
+
+    /**
+     * Mini program login code, used to bind WeChat openid after app registration.
+     */
+    private String xcxCode;
+
 }

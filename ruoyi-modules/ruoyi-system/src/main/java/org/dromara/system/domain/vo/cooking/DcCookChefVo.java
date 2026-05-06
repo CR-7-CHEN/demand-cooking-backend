@@ -10,6 +10,7 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @ExcelIgnoreUnannotated
@@ -76,6 +77,10 @@ public class DcCookChefVo implements Serializable {
     private String chefStatus;
 
     private String remark;
+
+    private String availableTimeText;
+
+    private List<DcCookChefTimeVo> availableTimes;
 
     private Date createTime;
 }

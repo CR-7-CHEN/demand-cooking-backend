@@ -3,28 +3,34 @@ package org.dromara.system.controller.cooking;
 import cn.hutool.core.io.FileUtil;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.utils.file.MimeTypeUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
+import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
 import org.dromara.system.domain.vo.SysOssUploadVo;
 import org.dromara.system.domain.vo.SysOssVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefVo;
+import org.dromara.system.domain.vo.cooking.DcCookChefTimeVo;
 import org.dromara.system.service.ISysOssService;
 import org.dromara.system.service.cooking.IDcCookChefService;
+import org.dromara.system.service.cooking.IDcCookChefTimeService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
 public class DcCookChefController {
 
     private final IDcCookChefService chefService;
+    private final IDcCookChefTimeService chefTimeService;
     private final ISysOssService ossService;
 
     @GetMapping("/cooking/chef/list")
@@ -126,5 +132,40 @@ public class DcCookChefController {
     @PostMapping("/cooking/chef/resign")
     public R<Void> resign() {
         return chefService.resign(LoginHelper.getUserId()) ? R.ok() : R.fail();
+    }
+
+    @GetMapping("/cooking/chef/time")
+    public R<List<DcCookChefTimeVo>> timeList(DcCookChefTimeBo bo) {
+        DcCookChefVo chef = requireCurrentChef();
+        bo.setChefId(chef.getChefId());
+        return R.ok(chefTimeService.queryList(bo));
+    }
+
+    @PostMapping("/cooking/chef/time")
+    public R<Void> addTime(@RequestBody DcCookChefTimeBo bo) {
+        DcCookChefVo chef = requireCurrentChef();
+        bo.setChefId(chef.getChefId());
+        return chefTimeService.insertByBo(bo) ? R.ok() : R.fail();
+    }
+
+    @PutMapping("/cooking/chef/time")
+    public R<Void> updateTime(@RequestBody DcCookChefTimeBo bo) {
+        DcCookChefVo chef = requireCurrentChef();
+        bo.setChefId(chef.getChefId());
+        return chefTimeService.updateByBo(bo) ? R.ok() : R.fail();
+    }
+
+    @DeleteMapping("/cooking/chef/time")
+    public R<Void> deleteTime(@RequestParam("id") Long timeId) {
+        DcCookChefVo chef = requireCurrentChef();
+        return chefTimeService.deleteById(timeId, chef.getChefId()) ? R.ok() : R.fail();
+    }
+
+    private DcCookChefVo requireCurrentChef() {
+        DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
+        if (chef == null) {
+            throw new ServiceException("chef profile not found");
+        }
+        return chef;
     }
 }
