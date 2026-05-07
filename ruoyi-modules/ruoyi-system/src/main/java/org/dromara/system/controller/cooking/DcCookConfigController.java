@@ -5,8 +5,10 @@ import org.dromara.common.core.domain.R;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.system.domain.bo.cooking.DcCookConfigBo;
+import org.dromara.system.domain.vo.SysNoticeVo;
 import org.dromara.system.domain.vo.cooking.DcCookConfigVo;
 import org.dromara.system.service.cooking.IDcCookConfigService;
+import org.dromara.system.service.ISysNoticeService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -17,6 +19,7 @@ import java.util.List;
 public class DcCookConfigController {
 
     private final IDcCookConfigService configService;
+    private final ISysNoticeService noticeService;
 
     @GetMapping("/cooking/config/list")
     public TableDataInfo<DcCookConfigVo> list(DcCookConfigBo bo, PageQuery pageQuery) {
@@ -49,10 +52,8 @@ public class DcCookConfigController {
     }
 
     @GetMapping("/cooking/config/commission/announcement")
-    public R<List<DcCookConfigVo>> announcement() {
-        DcCookConfigBo bo = new DcCookConfigBo();
-        bo.setPublishStatus("1");
-        return R.ok(configService.queryList(bo));
+    public R<List<SysNoticeVo>> announcement() {
+        return R.ok(noticeService.selectAppNoticeList());
     }
 
     @DeleteMapping("/cooking/config/{configIds}")

@@ -10,6 +10,7 @@ import org.dromara.system.domain.cooking.DcCookChef;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -44,6 +45,10 @@ public class DcCookChefBo extends BaseEntity {
 
     private String intro;
 
+    private String mealPeriod;
+
+    private List<DcCookChefTimeBo> availableTimes;
+
     private String healthCertNo;
 
     private String healthCertImageUrl;
@@ -63,6 +68,8 @@ public class DcCookChefBo extends BaseEntity {
     private String auditReason;
 
     private String chefStatus;
+
+    private String resignReason;
 
     private String remark;
 }

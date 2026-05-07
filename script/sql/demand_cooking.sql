@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_chef (
     audit_status            varchar(30)   DEFAULT '0' COMMENT '审核状态（0待审核 1已通过 2已拒绝）',
     audit_reason            varchar(500)  DEFAULT NULL COMMENT '审核原因',
     chef_status             varchar(30)   DEFAULT '0' COMMENT '厨师状态（0正常 1暂停 2禁用 3离职）',
+    resign_reason           varchar(500)  DEFAULT NULL COMMENT '离职原因',
     create_dept             bigint(20)    DEFAULT NULL COMMENT '创建部门',
     create_by               bigint(20)    DEFAULT NULL COMMENT '创建者',
     create_time             datetime      DEFAULT NULL COMMENT '创建时间',

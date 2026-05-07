@@ -20,6 +20,7 @@ import java.util.List;
 public class DcCookChefTimeServiceImpl implements IDcCookChefTimeService {
 
     public static final String STATUS_ENABLED = "0";
+    public static final List<String> MEAL_REMARK_OPTIONS = List.of("早餐", "午餐", "晚餐");
 
     private final DcCookChefTimeMapper baseMapper;
 
@@ -86,5 +87,12 @@ public class DcCookChefTimeServiceImpl implements IDcCookChefTimeService {
         if (!bo.getStartTime().before(bo.getEndTime())) {
             throw new ServiceException("startTime must be before endTime");
         }
+        if (!isValidMealRemark(bo.getRemark())) {
+            throw new ServiceException("remark must be one of 早餐/午餐/晚餐");
+        }
+    }
+
+    static boolean isValidMealRemark(String remark) {
+        return MEAL_REMARK_OPTIONS.contains(StringUtils.trim(remark));
     }
 }

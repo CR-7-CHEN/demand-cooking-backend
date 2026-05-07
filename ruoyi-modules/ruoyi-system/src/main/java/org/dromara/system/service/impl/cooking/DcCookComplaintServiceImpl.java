@@ -35,6 +35,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     private final DcCookComplaintMapper baseMapper;
     private final DcCookOrderMapper orderMapper;
     private final DcCookReviewMapper reviewMapper;
+    private final DcCookChefRatingHelper chefRatingHelper;
 
     @Override
     public DcCookComplaintVo queryById(Long complaintId) {
@@ -86,6 +87,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
                 review.setComplaintAdjusted("Y");
                 reviewMapper.updateById(review);
             }
+            chefRatingHelper.refreshRating(complaint.getChefId());
         }
         return ok;
     }

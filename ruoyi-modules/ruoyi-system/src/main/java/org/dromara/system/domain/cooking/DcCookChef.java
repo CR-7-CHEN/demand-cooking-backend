@@ -60,6 +60,8 @@ public class DcCookChef extends TenantEntity {
 
     private String chefStatus;
 
+    private String resignReason;
+
     private String remark;
 
     @TableLogic

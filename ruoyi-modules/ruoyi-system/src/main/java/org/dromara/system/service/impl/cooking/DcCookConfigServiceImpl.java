@@ -52,6 +52,7 @@ public class DcCookConfigServiceImpl implements IDcCookConfigService {
 
     @Override
     public Boolean insertByBo(DcCookConfigBo bo) {
+        validateConfigType(bo);
         if (!checkConfigKeyUnique(bo)) {
             throw new ServiceException("configKey already exists");
         }
@@ -64,6 +65,7 @@ public class DcCookConfigServiceImpl implements IDcCookConfigService {
 
     @Override
     public Boolean updateByBo(DcCookConfigBo bo) {
+        validateConfigType(bo);
         if (!checkConfigKeyUnique(bo)) {
             throw new ServiceException("configKey already exists");
         }
@@ -95,6 +97,7 @@ public class DcCookConfigServiceImpl implements IDcCookConfigService {
         Map<String, Object> params = bo.getParams();
         LambdaQueryWrapper<DcCookConfig> lqw = Wrappers.lambdaQuery();
         lqw.eq(bo.getConfigId() != null, DcCookConfig::getConfigId, bo.getConfigId());
+        lqw.ne(DcCookConfig::getConfigType, "ANNOUNCEMENT");
         lqw.like(StringUtils.isNotBlank(bo.getConfigName()), DcCookConfig::getConfigName, bo.getConfigName());
         lqw.like(StringUtils.isNotBlank(bo.getConfigKey()), DcCookConfig::getConfigKey, bo.getConfigKey());
         lqw.eq(StringUtils.isNotBlank(bo.getConfigType()), DcCookConfig::getConfigType, bo.getConfigType());
@@ -104,5 +107,11 @@ public class DcCookConfigServiceImpl implements IDcCookConfigService {
             DcCookConfig::getCreateTime, params.get("beginTime"), params.get("endTime"));
         lqw.orderByDesc(DcCookConfig::getCreateTime);
         return lqw;
+    }
+
+    private void validateConfigType(DcCookConfigBo bo) {
+        if ("ANNOUNCEMENT".equalsIgnoreCase(bo.getConfigType())) {
+            throw new ServiceException("announcement should be maintained in system notice");
+        }
     }
 }

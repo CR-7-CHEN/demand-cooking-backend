@@ -76,6 +76,8 @@ public class DcCookChefVo implements Serializable {
     @ExcelProperty(value = "Chef Status")
     private String chefStatus;
 
+    private String resignReason;
+
     private String remark;
 
     private String availableTimeText;

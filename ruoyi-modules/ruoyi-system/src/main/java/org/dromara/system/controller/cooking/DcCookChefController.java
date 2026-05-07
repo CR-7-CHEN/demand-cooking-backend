@@ -215,8 +215,9 @@ public class DcCookChefController {
     }
 
     @PostMapping("/cooking/chef/resign")
-    public R<Void> resign() {
-        return chefService.resign(LoginHelper.getUserId()) ? R.ok() : R.fail();
+    public R<Void> resign(@RequestBody(required = false) DcCookChefBo bo) {
+        String resignReason = bo == null ? null : bo.getResignReason();
+        return chefService.resign(LoginHelper.getUserId(), resignReason) ? R.ok() : R.fail();
     }
 
     @GetMapping("/cooking/chef/time")

@@ -10,6 +10,7 @@ import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
+import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookChefTime;
 import org.dromara.system.domain.cooking.DcCookOrder;
@@ -28,6 +29,7 @@ import org.dromara.system.mapper.cooking.DcCookSettlementMapper;
 import org.dromara.system.service.cooking.IDcCookConfigService;
 import org.dromara.system.service.cooking.IDcCookChefService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -50,6 +52,9 @@ import java.util.stream.Collectors;
 public class DcCookChefServiceImpl implements IDcCookChefService {
 
     private static final BigDecimal DEFAULT_PLATFORM_RATE = new BigDecimal("0.20");
+    private static final String MEAL_PERIOD_BREAKFAST = "breakfast";
+    private static final String MEAL_PERIOD_LUNCH = "lunch";
+    private static final String MEAL_PERIOD_DINNER = "dinner";
     private static final String AUDIT_APPROVED = "1";
     private static final String AUDIT_PENDING = "0";
     private static final String AUDIT_REJECTED = "2";
@@ -155,6 +160,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     @Override
     public TableDataInfo<DcCookChefVo> queryPageList(DcCookChefBo bo, PageQuery pageQuery) {
         Page<DcCookChefVo> page = baseMapper.selectVoPage(pageQuery.build(), buildQueryWrapper(bo));
+        hydrateAvailableTimes(page.getRecords());
         return TableDataInfo.build(page);
     }
 
@@ -167,7 +173,9 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
 
     @Override
     public List<DcCookChefVo> queryList(DcCookChefBo bo) {
-        return baseMapper.selectVoList(buildQueryWrapper(bo));
+        List<DcCookChefVo> list = baseMapper.selectVoList(buildQueryWrapper(bo));
+        hydrateAvailableTimes(list);
+        return list;
     }
 
     private LambdaQueryWrapper<DcCookChef> buildQueryWrapper(DcCookChefBo bo) {
@@ -194,13 +202,44 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         lqw.eq(DcCookChef::getAuditStatus, AUDIT_APPROVED);
         lqw.eq(DcCookChef::getChefStatus, STATUS_NORMAL);
         lqw.ge(DcCookChef::getHealthCertExpireDate, today);
+        applyMealPeriodFilter(lqw, bo.getMealPeriod());
         lqw.orderByDesc(DcCookChef::getCompletedOrders)
             .orderByDesc(DcCookChef::getRating)
             .orderByDesc(DcCookChef::getRecommendFlag);
         return lqw;
     }
 
+    private void applyMealPeriodFilter(LambdaQueryWrapper<DcCookChef> lqw, String mealPeriod) {
+        if (StringUtils.isBlank(mealPeriod)) {
+            return;
+        }
+        String mealRemark;
+        switch (mealPeriod.trim().toLowerCase()) {
+            case MEAL_PERIOD_BREAKFAST:
+                mealRemark = "早餐";
+                break;
+            case MEAL_PERIOD_LUNCH:
+                mealRemark = "午餐";
+                break;
+            case MEAL_PERIOD_DINNER:
+                mealRemark = "晚餐";
+                break;
+            default:
+                return;
+        }
+        lqw.apply("chef_id in ("
+                + "select chef_id "
+                + "from dc_cook_chef_time "
+                + "where del_flag = '0' "
+                + "and status = '0' "
+                + "and end_time >= now() "
+                + "and remark = {0}"
+                + ")",
+            mealRemark);
+    }
+
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean insertByBo(DcCookChefBo bo) {
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
@@ -224,16 +263,62 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (add.getRecommendFlag() == null) {
             add.setRecommendFlag("N");
         }
-        return baseMapper.insert(add) > 0;
+        boolean inserted = baseMapper.insert(add) > 0;
+        if (inserted) {
+            saveAvailableTimes(add.getChefId(), bo.getAvailableTimes());
+        }
+        return inserted;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean updateByBo(DcCookChefBo bo) {
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
         }
         DcCookChef update = MapstructUtils.convert(bo, DcCookChef.class);
-        return baseMapper.updateById(update) > 0;
+        boolean updated = baseMapper.updateById(update) > 0;
+        if (updated) {
+            saveAvailableTimes(bo.getChefId(), bo.getAvailableTimes());
+        }
+        return updated;
+    }
+
+    private void saveAvailableTimes(Long chefId, List<DcCookChefTimeBo> availableTimes) {
+        if (availableTimes == null) {
+            return;
+        }
+        if (chefId == null) {
+            throw new ServiceException("chefId is required");
+        }
+        availableTimes.forEach(time -> validateAvailableTime(chefId, time));
+        chefTimeMapper.delete(Wrappers.lambdaQuery(DcCookChefTime.class)
+            .eq(DcCookChefTime::getChefId, chefId));
+        availableTimes.forEach(time -> {
+            DcCookChefTime add = MapstructUtils.convert(time, DcCookChefTime.class);
+            add.setTimeId(null);
+            add.setChefId(chefId);
+            if (StringUtils.isBlank(add.getStatus())) {
+                add.setStatus("0");
+            }
+            chefTimeMapper.insert(add);
+        });
+    }
+
+    private void validateAvailableTime(Long chefId, DcCookChefTimeBo time) {
+        if (time == null) {
+            throw new ServiceException("availableTime is required");
+        }
+        time.setChefId(chefId);
+        if (time.getStartTime() == null || time.getEndTime() == null) {
+            throw new ServiceException("startTime and endTime are required");
+        }
+        if (!time.getStartTime().before(time.getEndTime())) {
+            throw new ServiceException("startTime must be before endTime");
+        }
+        if (!DcCookChefTimeServiceImpl.isValidMealRemark(time.getRemark())) {
+            throw new ServiceException("remark must be one of 早餐/午餐/晚餐");
+        }
     }
 
     @Override
@@ -296,12 +381,20 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     }
 
     @Override
-    public Boolean resign(Long userId) {
+    public Boolean resign(Long userId, String resignReason) {
+        String reason = resignReason == null ? null : resignReason.trim();
+        if (StringUtils.isBlank(reason)) {
+            throw new ServiceException("resignReason is required");
+        }
+        if (reason.length() > 500) {
+            throw new ServiceException("resignReason max length is 500");
+        }
         DcCookChef chef = requireChefByUserId(userId);
         if (hasUnfinishedOrder(chef.getChefId())) {
             throw new ServiceException("chef has unfinished orders");
         }
         chef.setChefStatus(STATUS_RESIGNED);
+        chef.setResignReason(reason);
         return baseMapper.updateById(chef) > 0;
     }
 
@@ -373,10 +466,6 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
                 "今天有待上门服务订单，请留意时间安排。", "info", todayServiceCount));
         }
 
-        if (STATUS_PAUSED.equals(chef.getChefStatus())) {
-            alerts.add(alert("paused", "已暂停接单",
-                "准备好后可在首页恢复接单。", "info", 1L));
-        }
         return alerts;
     }
 

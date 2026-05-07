@@ -38,6 +38,7 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
     private final DcCookOrderMapper orderMapper;
     private final SysUserMapper userMapper;
     private final DcCookChefMapper chefMapper;
+    private final DcCookChefRatingHelper chefRatingHelper;
 
     @Override
     public DcCookReviewVo queryById(Long reviewId) {
@@ -81,7 +82,11 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
         }
         add.setComplaintAdjusted("N");
         add.setReviewTime(new Date());
-        return baseMapper.insert(add) > 0;
+        boolean inserted = baseMapper.insert(add) > 0;
+        if (inserted) {
+            chefRatingHelper.refreshRating(add.getChefId());
+        }
+        return inserted;
     }
 
     @Override

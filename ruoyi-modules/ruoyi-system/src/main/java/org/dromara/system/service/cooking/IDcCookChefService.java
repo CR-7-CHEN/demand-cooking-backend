@@ -40,7 +40,7 @@ public interface IDcCookChefService {
 
     Boolean resume(Long userId);
 
-    Boolean resign(Long userId);
+    Boolean resign(Long userId, String resignReason);
 
     Boolean deleteWithValidByIds(Collection<Long> ids, Boolean isValid);
 

@@ -40,6 +40,13 @@ public interface ISysNoticeService {
     List<SysNoticeVo> selectNoticeList(SysNoticeBo notice);
 
     /**
+     * 查询小程序工作台公告列表
+     *
+     * @return 公告集合
+     */
+    List<SysNoticeVo> selectAppNoticeList();
+
+    /**
      * 新增公告
      *
      * @param bo 公告信息
