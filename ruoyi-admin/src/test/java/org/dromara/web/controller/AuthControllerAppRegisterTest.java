@@ -21,6 +21,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @DisplayName("App 注册后自动登录")
@@ -33,9 +35,9 @@ class AuthControllerAppRegisterTest {
         ISysConfigService configService = mock(ISysConfigService.class);
         ISysClientService clientService = mock(ISysClientService.class);
         SysRegisterService registerService = mock(SysRegisterService.class);
+        SysLoginService loginService = mock(SysLoginService.class);
 
         RegisterBody body = new RegisterBody();
-        body.setTenantId("000000");
         body.setUsername("zuofan");
         body.setPassword("123456");
         body.setClientId("client-app");
@@ -49,14 +51,15 @@ class AuthControllerAppRegisterTest {
         LoginVo expected = new LoginVo();
         expected.setAccessToken("token-value");
 
-        when(configService.selectRegisterEnabled("000000")).thenReturn(true);
+        when(configService.selectRegisterEnabled(null)).thenReturn(true);
         when(clientService.queryByClientId("client-app")).thenReturn(client);
 
-        AuthController controller = new TestAuthController(configService, clientService, registerService, expected);
+        AuthController controller = new TestAuthController(configService, clientService, registerService, loginService, expected);
 
         R<LoginVo> response = controller.appRegister(body);
 
         assertSame(expected, response.getData());
+        verify(loginService, never()).checkTenant(null);
         inOrder(registerService, clientService);
         org.mockito.InOrder order = inOrder(registerService, clientService);
         order.verify(clientService).queryByClientId("client-app");
@@ -68,8 +71,9 @@ class AuthControllerAppRegisterTest {
         private final LoginVo loginVo;
 
         private TestAuthController(ISysConfigService configService, ISysClientService clientService,
-                                   SysRegisterService registerService, LoginVo loginVo) {
-            super(mock(SocialProperties.class), mock(SysLoginService.class), registerService,
+                                   SysRegisterService registerService, SysLoginService loginService,
+                                   LoginVo loginVo) {
+            super(mock(SocialProperties.class), loginService, registerService,
                 configService, mock(ISysTenantService.class), mock(ISysSocialService.class),
                 clientService, mock(ScheduledExecutorService.class));
             this.loginVo = loginVo;

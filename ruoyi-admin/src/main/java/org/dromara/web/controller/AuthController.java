@@ -111,7 +111,6 @@ public class AuthController {
             return R.fail(MessageUtils.message("auth.grant.type.blocked"));
         }
         // 校验租户
-        loginService.checkTenant(loginBody.getTenantId());
         // 登录
         LoginVo loginVo = IAuthStrategy.login(body, client, grantType, checkCaptcha);
 
@@ -237,7 +236,6 @@ public class AuthController {
         } else if (!SystemConstants.NORMAL.equals(client.getStatus())) {
             return R.fail(MessageUtils.message("auth.grant.type.blocked"));
         }
-        loginService.checkTenant(user.getTenantId());
         registerService.register(user, false);
         return R.ok(loginRegisteredAppUser(user, client));
     }

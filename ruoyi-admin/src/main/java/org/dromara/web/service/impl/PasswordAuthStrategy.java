@@ -50,9 +50,11 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 密码认证策略
+ * Password auth strategy.
  *
- * @author Michelle.Chung
+ * This project uses password login to opportunistically bind mini-program
+ * openid when xcxCode is present, so the next WeChat quick login can locate
+ * the account directly.
  */
 @Slf4j
 @Service("password" + IAuthStrategy.BASE_NAME)
@@ -88,14 +90,12 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         String uuid = loginBody.getUuid();
 
         boolean captchaEnabled = captchaProperties.getEnable();
-        // 验证码开关
         if (checkCaptcha && captchaEnabled) {
             validateCaptcha(tenantId, username, code, uuid);
         }
         LoginUser loginUser = TenantHelper.dynamic(tenantId, () -> {
             SysUserVo user = loadUserByUsername(username);
             loginService.checkLogin(LoginType.PASSWORD, tenantId, username, () -> !BCrypt.checkpw(password, user.getPassword()));
-            // 此处可根据登录用户的数据不同 自行创建 loginUser
             return loginService.buildLoginUser(user);
         });
         bindMiniProgramOpenidIfPresent(loginBody, loginUser);
@@ -103,12 +103,9 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         loginUser.setDeviceType(client.getDeviceType());
         SaLoginParameter model = new SaLoginParameter();
         model.setDeviceType(client.getDeviceType());
-        // 自定义分配 不同用户体系 不同 token 授权时间 不设置默认走全局 yml 配置
-        // 例如: 后台用户30分钟过期 app用户1天过期
         model.setTimeout(client.getTimeout());
         model.setActiveTimeout(client.getActiveTimeout());
         model.setExtra(LoginHelper.CLIENT_KEY, client.getClientId());
-        // 生成token
         LoginHelper.login(loginUser, model);
 
         LoginVo loginVo = new LoginVo();
@@ -168,7 +165,7 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         if (CollUtil.isNotEmpty(authBindings)) {
             SysSocialVo existing = authBindings.get(0);
             if (!loginUser.getUserId().equals(existing.getUserId())) {
-                throw new ServiceException("此微信已绑定其他账号");
+                log.info("mini program openid rebind from user {} to user {}", existing.getUserId(), loginUser.getUserId());
             }
             bo.setId(existing.getId());
             socialService.updateByBo(bo);
@@ -200,13 +197,6 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         return MINI_PROGRAM_SOURCE + ":" + openid;
     }
 
-    /**
-     * 校验验证码
-     *
-     * @param username 用户名
-     * @param code     验证码
-     * @param uuid     唯一标识
-     */
     private void validateCaptcha(String tenantId, String username, String code, String uuid) {
         String verifyKey = GlobalConstants.CAPTCHA_CODE_KEY + StringUtils.blankToDefault(uuid, "");
         String captcha = RedisUtils.getCacheObject(verifyKey);
@@ -224,10 +214,10 @@ public class PasswordAuthStrategy implements IAuthStrategy {
     private SysUserVo loadUserByUsername(String username) {
         SysUserVo user = userMapper.selectVoOne(new LambdaQueryWrapper<SysUser>().eq(SysUser::getUserName, username));
         if (ObjectUtil.isNull(user)) {
-            log.info("登录用户：{} 不存在.", username);
+            log.info("login user {} does not exist", username);
             throw new UserException("user.not.exists", username);
         } else if (SystemConstants.DISABLE.equals(user.getStatus())) {
-            log.info("登录用户：{} 已被停用.", username);
+            log.info("login user {} is disabled", username);
             throw new UserException("user.blocked", username);
         }
         return user;
@@ -247,5 +237,4 @@ public class PasswordAuthStrategy implements IAuthStrategy {
             this.refreshToken = refreshToken;
         }
     }
-
 }
