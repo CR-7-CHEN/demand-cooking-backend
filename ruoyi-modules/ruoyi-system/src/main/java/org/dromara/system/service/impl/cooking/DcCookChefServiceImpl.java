@@ -180,12 +180,15 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
 
     private LambdaQueryWrapper<DcCookChef> buildQueryWrapper(DcCookChefBo bo) {
         Map<String, Object> params = bo.getParams();
+        String keyword = StringUtils.trim(bo.getKeyword());
         LambdaQueryWrapper<DcCookChef> lqw = Wrappers.lambdaQuery();
         lqw.eq(bo.getChefId() != null, DcCookChef::getChefId, bo.getChefId());
         lqw.eq(bo.getUserId() != null, DcCookChef::getUserId, bo.getUserId());
         lqw.eq(bo.getAreaId() != null, DcCookChef::getAreaId, bo.getAreaId());
         lqw.like(StringUtils.isNotBlank(bo.getAreaName()), DcCookChef::getAreaName, bo.getAreaName());
         lqw.like(StringUtils.isNotBlank(bo.getChefName()), DcCookChef::getChefName, bo.getChefName());
+        lqw.and(StringUtils.isNotBlank(keyword),
+            wrapper -> wrapper.like(DcCookChef::getChefName, keyword).or().like(DcCookChef::getSkillTags, keyword));
         lqw.eq(StringUtils.isNotBlank(bo.getMobile()), DcCookChef::getMobile, bo.getMobile());
         lqw.eq(StringUtils.isNotBlank(bo.getAuditStatus()), DcCookChef::getAuditStatus, bo.getAuditStatus());
         lqw.eq(StringUtils.isNotBlank(bo.getChefStatus()), DcCookChef::getChefStatus, bo.getChefStatus());
@@ -210,22 +213,9 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     }
 
     private void applyMealPeriodFilter(LambdaQueryWrapper<DcCookChef> lqw, String mealPeriod) {
-        if (StringUtils.isBlank(mealPeriod)) {
+        List<String> mealRemarks = resolveMealRemarks(mealPeriod);
+        if (mealRemarks.isEmpty()) {
             return;
-        }
-        String mealRemark;
-        switch (mealPeriod.trim().toLowerCase()) {
-            case MEAL_PERIOD_BREAKFAST:
-                mealRemark = "早餐";
-                break;
-            case MEAL_PERIOD_LUNCH:
-                mealRemark = "午餐";
-                break;
-            case MEAL_PERIOD_DINNER:
-                mealRemark = "晚餐";
-                break;
-            default:
-                return;
         }
         lqw.apply("chef_id in ("
                 + "select chef_id "
@@ -233,9 +223,25 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
                 + "where del_flag = '0' "
                 + "and status = '0' "
                 + "and end_time >= now() "
-                + "and remark = {0}"
+                + "and remark in ({0}, {1})"
                 + ")",
-            mealRemark);
+            mealRemarks.get(0), mealRemarks.get(1));
+    }
+
+    private List<String> resolveMealRemarks(String mealPeriod) {
+        if (StringUtils.isBlank(mealPeriod)) {
+            return List.of();
+        }
+        switch (mealPeriod.trim().toLowerCase()) {
+            case MEAL_PERIOD_BREAKFAST:
+                return List.of("早餐", "早饭");
+            case MEAL_PERIOD_LUNCH:
+                return List.of("午餐", "午饭");
+            case MEAL_PERIOD_DINNER:
+                return List.of("晚餐", "晚饭");
+            default:
+                return List.of();
+        }
     }
 
     @Override

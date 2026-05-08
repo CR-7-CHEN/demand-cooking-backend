@@ -35,6 +35,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.Calendar;
 import java.util.Date;
@@ -332,10 +333,60 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         } else {
             lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DcCookOrder::getStatus, bo.getStatus());
         }
+        if (StringUtils.isNotBlank(bo.getMonth())) {
+            applySettlementMonthFilter(lqw, bo.getMonth(),
+                StringUtils.isBlank(bo.getStatusGroup()) && StringUtils.isBlank(bo.getStatus()));
+        }
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
             DcCookOrder::getCreateTime, params.get("beginTime"), params.get("endTime"));
-        lqw.orderByDesc(DcCookOrder::getCreateTime);
+        if (StringUtils.isNotBlank(bo.getMonth())) {
+            lqw.orderByDesc(DcCookOrder::getCompleteTime)
+                .orderByDesc(DcCookOrder::getConfirmTime)
+                .orderByDesc(DcCookOrder::getPayTime)
+                .orderByDesc(DcCookOrder::getCreateTime);
+        } else {
+            lqw.orderByDesc(DcCookOrder::getCreateTime);
+        }
         return lqw;
+    }
+
+    private void applySettlementMonthFilter(LambdaQueryWrapper<DcCookOrder> lqw, String month, boolean defaultCompletedOnly) {
+        MonthRange range = resolveMonthRange(month);
+        if (defaultCompletedOnly) {
+            lqw.eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED);
+        }
+        lqw.and(wrapper -> wrapper
+            .ge(DcCookOrder::getCompleteTime, range.start())
+            .lt(DcCookOrder::getCompleteTime, range.end())
+            .or(fallback -> fallback
+                .isNull(DcCookOrder::getCompleteTime)
+                .ge(DcCookOrder::getConfirmTime, range.start())
+                .lt(DcCookOrder::getConfirmTime, range.end()))
+            .or(fallback -> fallback
+                .isNull(DcCookOrder::getCompleteTime)
+                .isNull(DcCookOrder::getConfirmTime)
+                .ge(DcCookOrder::getPayTime, range.start())
+                .lt(DcCookOrder::getPayTime, range.end())));
+    }
+
+    private MonthRange resolveMonthRange(String month) {
+        YearMonth yearMonth = parseMonth(month);
+        return new MonthRange(
+            Date.from(yearMonth.atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant()),
+            Date.from(yearMonth.plusMonths(1).atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant())
+        );
+    }
+
+    private YearMonth parseMonth(String month) {
+        String normalized = StringUtils.trim(month);
+        if (StringUtils.isNotBlank(normalized) && normalized.matches("\\d{6}")) {
+            normalized = normalized.substring(0, 4) + "-" + normalized.substring(4, 6);
+        }
+        try {
+            return YearMonth.parse(normalized);
+        } catch (Exception e) {
+            throw new ServiceException("invalid month, expected yyyy-MM");
+        }
     }
 
     private List<String> resolveGroupedStatuses(String statusGroup) {
@@ -626,5 +677,8 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
                 record.setChefName(chef.getChefName());
             }
         });
+    }
+
+    private record MonthRange(Date start, Date end) {
     }
 }

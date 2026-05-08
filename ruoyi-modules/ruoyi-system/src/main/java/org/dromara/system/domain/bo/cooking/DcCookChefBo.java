@@ -21,6 +21,8 @@ public class DcCookChefBo extends BaseEntity {
 
     private Long userId;
 
+    private String keyword;
+
     @NotBlank(message = "realName is required")
     @Size(max = 64, message = "realName max length is 64")
     private String chefName;

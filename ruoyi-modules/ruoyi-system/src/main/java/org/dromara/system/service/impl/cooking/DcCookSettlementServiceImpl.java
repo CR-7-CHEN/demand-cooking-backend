@@ -25,6 +25,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -68,10 +71,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         if (exists) {
             throw new ServiceException("settlement already exists");
         }
-        List<DcCookOrder> orders = orderMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getChefId, bo.getChefId())
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED)
-            .likeRight(DcCookOrder::getOrderNo, "OD" + month.replace("-", "")));
+        List<DcCookOrder> orders = orderMapper.selectList(buildCompletedOrderMonthWrapper(bo.getChefId(), month));
         BigDecimal orderAmount = orders.stream()
             .map(item -> item.getPayAmount() == null ? BigDecimal.ZERO : item.getPayAmount())
             .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -120,11 +120,61 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
     }
 
     private int countChefCancel(Long chefId, String month) {
-        Long count = orderMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
+        Long count = orderMapper.selectCount(buildChefCancelMonthWrapper(chefId, month));
+        return count.intValue();
+    }
+
+    private LambdaQueryWrapper<DcCookOrder> buildCompletedOrderMonthWrapper(Long chefId, String month) {
+        MonthRange range = resolveMonthRange(month);
+        return Wrappers.lambdaQuery(DcCookOrder.class)
+            .eq(DcCookOrder::getChefId, chefId)
+            .eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED)
+            .and(wrapper -> wrapper
+                .ge(DcCookOrder::getCompleteTime, range.start())
+                .lt(DcCookOrder::getCompleteTime, range.end())
+                .or(fallback -> fallback
+                    .isNull(DcCookOrder::getCompleteTime)
+                    .ge(DcCookOrder::getConfirmTime, range.start())
+                    .lt(DcCookOrder::getConfirmTime, range.end()))
+                .or(fallback -> fallback
+                    .isNull(DcCookOrder::getCompleteTime)
+                    .isNull(DcCookOrder::getConfirmTime)
+                    .ge(DcCookOrder::getPayTime, range.start())
+                    .lt(DcCookOrder::getPayTime, range.end())));
+    }
+
+    private LambdaQueryWrapper<DcCookOrder> buildChefCancelMonthWrapper(Long chefId, String month) {
+        MonthRange range = resolveMonthRange(month);
+        return Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
             .eq(DcCookOrder::getCancelType, DcCookOrderStatus.CANCEL_CHEF)
-            .likeRight(DcCookOrder::getOrderNo, "OD" + month.replace("-", "")));
-        return count.intValue();
+            .isNotNull(DcCookOrder::getCancelTime)
+            .ge(DcCookOrder::getCancelTime, range.start())
+            .lt(DcCookOrder::getCancelTime, range.end());
+    }
+
+    private MonthRange resolveMonthRange(String month) {
+        YearMonth yearMonth = parseMonth(month);
+        return new MonthRange(
+            toDate(yearMonth.atDay(1)),
+            toDate(yearMonth.plusMonths(1).atDay(1))
+        );
+    }
+
+    private YearMonth parseMonth(String month) {
+        String normalized = StringUtils.trim(month);
+        if (StringUtils.isNotBlank(normalized) && normalized.matches("\\d{6}")) {
+            normalized = normalized.substring(0, 4) + "-" + normalized.substring(4, 6);
+        }
+        try {
+            return YearMonth.parse(normalized);
+        } catch (Exception e) {
+            throw new ServiceException("invalid settlementMonth, expected yyyy-MM");
+        }
+    }
+
+    private Date toDate(LocalDate date) {
+        return Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant());
     }
 
     private BigDecimal getDecimalConfig(String key, BigDecimal defaultValue) {
@@ -134,5 +184,8 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         } catch (Exception e) {
             return defaultValue;
         }
+    }
+
+    private record MonthRange(Date start, Date end) {
     }
 }

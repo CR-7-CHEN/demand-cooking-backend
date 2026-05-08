@@ -47,6 +47,8 @@ public class DcCookOrderBo extends BaseEntity {
 
     private String statusGroup;
 
+    private String month;
+
     private BigDecimal quoteAmount;
 
     private String quoteRemark;

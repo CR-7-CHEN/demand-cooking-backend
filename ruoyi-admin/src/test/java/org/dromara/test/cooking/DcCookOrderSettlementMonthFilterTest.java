@@ -1,0 +1,82 @@
+package org.dromara.test.cooking;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
+import org.dromara.system.domain.cooking.DcCookOrder;
+import org.dromara.system.domain.cooking.DcCookOrderStatus;
+import org.dromara.system.mapper.SysUserMapper;
+import org.dromara.system.mapper.cooking.DcCookAddressMapper;
+import org.dromara.system.mapper.cooking.DcCookChefMapper;
+import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
+import org.dromara.system.mapper.cooking.DcCookMessageMapper;
+import org.dromara.system.mapper.cooking.DcCookOrderMapper;
+import org.dromara.system.service.cooking.IDcCookConfigService;
+import org.dromara.system.service.impl.cooking.DcCookOrderServiceImpl;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import java.lang.reflect.Method;
+import java.time.YearMonth;
+import java.time.ZoneId;
+import java.util.Date;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+
+@DisplayName("Cooking settlement detail order month filter")
+@Tag("dev")
+public class DcCookOrderSettlementMonthFilterTest {
+
+    @Test
+    @DisplayName("month filter narrows chef orders to completed business-time records for settlement detail")
+    void monthFilterBuildsSettlementScopedQuery() throws Exception {
+        DcCookOrderServiceImpl service = newService();
+        DcCookOrderBo bo = new DcCookOrderBo();
+        bo.setChefId(123L);
+        bo.setMonth("2026-05");
+
+        LambdaQueryWrapper<DcCookOrder> wrapper = invokeBuildQueryWrapper(service, bo);
+        Map<String, Object> values = wrapper.getParamNameValuePairs();
+
+        assertTrue(values.containsValue(123L));
+        assertTrue(values.containsValue(DcCookOrderStatus.COMPLETED));
+        assertTrue(values.containsValue(monthStart("2026-05")));
+        assertTrue(values.containsValue(nextMonthStart("2026-05")));
+        assertTrue(wrapper.getSqlSegment().contains("completeTime"));
+        assertTrue(wrapper.getSqlSegment().contains("confirmTime"));
+        assertTrue(wrapper.getSqlSegment().contains("payTime"));
+        assertTrue(wrapper.getSqlSegment().contains("status"));
+        assertFalse(wrapper.getSqlSegment().contains("orderNo"));
+    }
+
+    private DcCookOrderServiceImpl newService() {
+        return new DcCookOrderServiceImpl(
+            mock(DcCookOrderMapper.class),
+            mock(DcCookChefMapper.class),
+            mock(DcCookChefTimeMapper.class),
+            mock(DcCookAddressMapper.class),
+            mock(DcCookMessageMapper.class),
+            mock(SysUserMapper.class),
+            mock(IDcCookConfigService.class)
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private LambdaQueryWrapper<DcCookOrder> invokeBuildQueryWrapper(DcCookOrderServiceImpl service, DcCookOrderBo bo)
+        throws Exception {
+        Method method = DcCookOrderServiceImpl.class.getDeclaredMethod("buildQueryWrapper", DcCookOrderBo.class);
+        method.setAccessible(true);
+        return (LambdaQueryWrapper<DcCookOrder>) method.invoke(service, bo);
+    }
+
+    private Date monthStart(String month) {
+        return Date.from(YearMonth.parse(month).atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
+
+    private Date nextMonthStart(String month) {
+        return Date.from(YearMonth.parse(month).plusMonths(1).atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
+}
