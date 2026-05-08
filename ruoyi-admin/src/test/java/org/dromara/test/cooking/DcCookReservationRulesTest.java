@@ -1,10 +1,15 @@
 package org.dromara.test.cooking;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrder;
+import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookAddressMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
@@ -19,9 +24,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Date;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -71,6 +78,34 @@ public class DcCookReservationRulesTest {
         assertEquals(3 * 60 * 60_000L, lockMillis);
     }
 
+    @Test
+    @DisplayName("reservation overlap query ignores chef completed orders pending user confirmation")
+    void submitOverlapQueryReleasesWaitingConfirmOrders() {
+        initTableInfo(DcCookOrder.class);
+
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, chefMapper, chefTimeMapper);
+        when(chefMapper.selectById(20L)).thenReturn(approvedChef(20L));
+        when(chefTimeMapper.exists(any(Wrapper.class))).thenReturn(true);
+        when(orderMapper.exists(any(Wrapper.class))).thenReturn(false);
+        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(orderMapper.insert(any(DcCookOrder.class))).thenReturn(1);
+
+        service.submit(orderBo());
+
+        ArgumentCaptor<Wrapper> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(orderMapper).exists(wrapperCaptor.capture());
+        @SuppressWarnings("unchecked")
+        LambdaQueryWrapper<DcCookOrder> wrapper = (LambdaQueryWrapper<DcCookOrder>) wrapperCaptor.getValue();
+        Map<String, Object> values = wrapper.getParamNameValuePairs();
+
+        assertTrue(values.containsValue(DcCookOrderStatus.WAITING_CONFIRM));
+        assertTrue(wrapper.getSqlSegment().contains("serviceCompleteTime"));
+        assertTrue(wrapper.getSqlSegment().contains("status"));
+    }
+
     private DcCookOrderServiceImpl newService(DcCookOrderMapper orderMapper, DcCookChefMapper chefMapper,
                                               DcCookChefTimeMapper chefTimeMapper) {
         IDcCookConfigService configService = mock(IDcCookConfigService.class);
@@ -109,5 +144,14 @@ public class DcCookReservationRulesTest {
 
     private Date hoursFromNow(int hours) {
         return new Date(System.currentTimeMillis() + hours * 60 * 60_000L);
+    }
+
+    private void initTableInfo(Class<?> entityClass) {
+        if (TableInfoHelper.getTableInfo(entityClass) != null) {
+            return;
+        }
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), entityClass.getName());
+        assistant.setCurrentNamespace(entityClass.getName());
+        TableInfoHelper.initTableInfo(assistant, entityClass);
     }
 }

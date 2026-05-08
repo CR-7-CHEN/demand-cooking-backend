@@ -4,6 +4,7 @@ import cn.dev33.satoken.annotation.SaIgnore;
 import cn.hutool.core.io.FileUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.dromara.common.core.constant.HttpStatus;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.StringUtils;
@@ -250,7 +251,7 @@ public class DcCookChefController {
     private DcCookChefVo requireCurrentChef() {
         DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
         if (chef == null) {
-            throw new ServiceException("chef profile not found");
+            throw new ServiceException("请先申请成为做饭人员", HttpStatus.FORBIDDEN);
         }
         return chef;
     }

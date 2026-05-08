@@ -221,8 +221,12 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     public Boolean serviceComplete(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
         assertStatus(order, DcCookOrderStatus.WAITING_SERVICE);
+        Date completedAt = new Date();
+        if (order.getServiceStartTime() != null && completedAt.before(order.getServiceStartTime())) {
+            throw new ServiceException("service has not started");
+        }
         order.setStatus(DcCookOrderStatus.WAITING_CONFIRM);
-        order.setServiceCompleteTime(new Date());
+        order.setServiceCompleteTime(completedAt);
         order.setServiceCompleteType(DcCookOrderStatus.COMPLETE_BY_CHEF);
         boolean ok = baseMapper.updateById(order) > 0;
         recordMessage("SERVICE_COMPLETE", "USER", order.getUserId(), order, "Chef marked service complete");
@@ -441,6 +445,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         boolean overlapped = baseMapper.exists(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
             .notIn(DcCookOrder::getStatus, DcCookOrderStatus.TERMINAL_STATUSES)
+            .and(wrapper -> wrapper.ne(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_CONFIRM)
+                .or()
+                .isNull(DcCookOrder::getServiceCompleteTime))
             .lt(DcCookOrder::getServiceStartTime, endTime)
             .gt(DcCookOrder::getServiceEndTime, startTime));
         if (overlapped) {

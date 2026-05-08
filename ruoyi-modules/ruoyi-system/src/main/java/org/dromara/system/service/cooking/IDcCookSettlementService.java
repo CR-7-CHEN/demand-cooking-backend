@@ -15,4 +15,12 @@ public interface IDcCookSettlementService {
     TableDataInfo<DcCookSettlementVo> queryPageList(DcCookSettlementBo bo, PageQuery pageQuery);
 
     DcCookSettlementVo generateMonth(DcCookSettlementBo bo);
+
+    Boolean applyReview(DcCookSettlementBo bo);
+
+    Boolean handleReview(DcCookSettlementBo bo);
+
+    Boolean confirm(DcCookSettlementBo bo);
+
+    Boolean pay(DcCookSettlementBo bo);
 }

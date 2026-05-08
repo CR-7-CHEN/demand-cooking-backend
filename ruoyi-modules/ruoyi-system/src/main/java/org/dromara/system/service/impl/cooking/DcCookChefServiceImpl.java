@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import org.dromara.common.core.constant.HttpStatus;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
@@ -205,6 +206,13 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         lqw.eq(DcCookChef::getAuditStatus, AUDIT_APPROVED);
         lqw.eq(DcCookChef::getChefStatus, STATUS_NORMAL);
         lqw.ge(DcCookChef::getHealthCertExpireDate, today);
+        lqw.apply("chef_id in ("
+                + "select chef_id "
+                + "from dc_cook_order "
+                + "where del_flag = '0' "
+                + "and status = {0}"
+                + ")",
+            DcCookOrderStatus.COMPLETED);
         applyMealPeriodFilter(lqw, bo.getMealPeriod());
         lqw.orderByDesc(DcCookChef::getCompletedOrders)
             .orderByDesc(DcCookChef::getRating)
@@ -422,10 +430,12 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private DcCookChefWorkbenchVo.RevenueOverview buildRevenueOverview(Long chefId, Date todayStart, Date tomorrowStart,
                                                                        Date monthStart, Date nextMonthStart) {
         DcCookChefWorkbenchVo.RevenueOverview overview = new DcCookChefWorkbenchVo.RevenueOverview();
-        overview.setTodayIncome(sumPaidAmount(chefId, todayStart, tomorrowStart));
-        overview.setMonthIncome(sumPaidAmount(chefId, monthStart, nextMonthStart));
+        BigDecimal todayCommission = sumCommissionAmount(chefId, todayStart, tomorrowStart);
+        BigDecimal monthCommission = sumCommissionAmount(chefId, monthStart, nextMonthStart);
+        overview.setTodayIncome(todayCommission);
+        overview.setMonthIncome(monthCommission);
         overview.setMonthCompletedOrders(countMonthCompletedOrders(chefId, monthStart, nextMonthStart));
-        overview.setMonthCommissionAmount(sumCommissionAmount(chefId, monthStart, nextMonthStart));
+        overview.setMonthCommissionAmount(monthCommission);
 
         DcCookSettlement settlement = settlementMapper.selectOne(Wrappers.lambdaQuery(DcCookSettlement.class)
             .eq(DcCookSettlement::getChefId, chefId)
@@ -481,16 +491,14 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         Date end = toDate(today.plusDays(1));
         DateTimeFormatter dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE;
         DateTimeFormatter labelFormatter = DateTimeFormatter.ofPattern("MM.dd");
+        BigDecimal chefRate = BigDecimal.ONE.subtract(getDecimalConfig("dc.cooking.platform.rate", DEFAULT_PLATFORM_RATE));
 
-        Map<LocalDate, BigDecimal> amountByDate = orderMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-                .eq(DcCookOrder::getChefId, chefId)
-                .in(DcCookOrder::getStatus, paidStatuses())
-                .ge(DcCookOrder::getPayTime, start)
-                .lt(DcCookOrder::getPayTime, end))
+        Map<LocalDate, BigDecimal> amountByDate = selectCompletedOrdersInRange(chefId, start, end)
             .stream()
-            .filter(order -> order.getPayTime() != null)
-            .collect(Collectors.groupingBy(order -> toLocalDate(order.getPayTime()),
-                Collectors.reducing(BigDecimal.ZERO, order -> defaultAmount(order.getPayAmount()), BigDecimal::add)));
+            .map(order -> Map.entry(toLocalDate(resolveCompleteTime(order)), calculateCommission(order.getPayAmount(), chefRate)))
+            .filter(entry -> entry.getKey() != null)
+            .collect(Collectors.groupingBy(Map.Entry::getKey,
+                Collectors.reducing(BigDecimal.ZERO, Map.Entry::getValue, BigDecimal::add)));
 
         List<DcCookChefWorkbenchVo.TrendItem> trend = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
@@ -502,18 +510,6 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             trend.add(item);
         }
         return trend;
-    }
-
-    private BigDecimal sumPaidAmount(Long chefId, Date start, Date end) {
-        return orderMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-                .eq(DcCookOrder::getChefId, chefId)
-                .in(DcCookOrder::getStatus, paidStatuses())
-                .ge(DcCookOrder::getPayTime, start)
-                .lt(DcCookOrder::getPayTime, end))
-            .stream()
-            .map(DcCookOrder::getPayAmount)
-            .map(this::defaultAmount)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private Long countMonthCompletedOrders(Long chefId, Date monthStart, Date nextMonthStart) {
@@ -536,37 +532,37 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         return item;
     }
 
-    private List<String> paidStatuses() {
-        return List.of(DcCookOrderStatus.WAITING_SERVICE, DcCookOrderStatus.WAITING_CONFIRM, DcCookOrderStatus.COMPLETED);
-    }
-
     private BigDecimal defaultAmount(BigDecimal amount) {
         return amount == null ? BigDecimal.ZERO : amount;
     }
 
     private BigDecimal sumCommissionAmount(Long chefId, Date monthStart, Date nextMonthStart) {
         BigDecimal chefRate = BigDecimal.ONE.subtract(getDecimalConfig("dc.cooking.platform.rate", DEFAULT_PLATFORM_RATE));
-        return selectCompletedOrdersInMonth(chefId, monthStart, nextMonthStart).stream()
+        return selectCompletedOrdersInRange(chefId, monthStart, nextMonthStart).stream()
             .map(order -> calculateCommission(order.getPayAmount(), chefRate))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private List<DcCookOrder> selectCompletedOrdersInMonth(Long chefId, Date monthStart, Date nextMonthStart) {
+        return selectCompletedOrdersInRange(chefId, monthStart, nextMonthStart);
+    }
+
+    private List<DcCookOrder> selectCompletedOrdersInRange(Long chefId, Date start, Date end) {
         return orderMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
             .eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED)
             .and(wrapper -> wrapper
-                .ge(DcCookOrder::getCompleteTime, monthStart)
-                .lt(DcCookOrder::getCompleteTime, nextMonthStart)
+                .ge(DcCookOrder::getCompleteTime, start)
+                .lt(DcCookOrder::getCompleteTime, end)
                 .or(fallback -> fallback
                     .isNull(DcCookOrder::getCompleteTime)
-                    .ge(DcCookOrder::getConfirmTime, monthStart)
-                    .lt(DcCookOrder::getConfirmTime, nextMonthStart))
+                    .ge(DcCookOrder::getConfirmTime, start)
+                    .lt(DcCookOrder::getConfirmTime, end))
                 .or(fallback -> fallback
                     .isNull(DcCookOrder::getCompleteTime)
                     .isNull(DcCookOrder::getConfirmTime)
-                    .ge(DcCookOrder::getPayTime, monthStart)
-                    .lt(DcCookOrder::getPayTime, nextMonthStart))));
+                    .ge(DcCookOrder::getPayTime, start)
+                    .lt(DcCookOrder::getPayTime, end))));
     }
 
     private DcCookChefCommissionOrdersVo.Row buildCommissionRow(DcCookOrder order, DcCookReview review, BigDecimal chefRate) {
@@ -622,7 +618,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         DcCookChef chef = requireChefByUserId(userId);
         if (!AUDIT_APPROVED.equals(chef.getAuditStatus())
             || (!STATUS_NORMAL.equals(chef.getChefStatus()) && !STATUS_PAUSED.equals(chef.getChefStatus()))) {
-            throw new ServiceException("chef workbench unavailable");
+            throw new ServiceException("做饭人员审核通过后可访问该功能", HttpStatus.FORBIDDEN);
         }
         return chef;
     }
@@ -644,7 +640,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             .orderByDesc(DcCookChef::getCreateTime)
             .last("limit 1"), false);
         if (chef == null) {
-            throw new ServiceException("chef profile not found");
+            throw new ServiceException("请先申请成为做饭人员", HttpStatus.FORBIDDEN);
         }
         return chef;
     }

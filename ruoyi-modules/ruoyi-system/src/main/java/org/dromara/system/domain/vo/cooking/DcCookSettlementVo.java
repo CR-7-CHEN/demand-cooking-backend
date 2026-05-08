@@ -49,9 +49,27 @@ public class DcCookSettlementVo implements Serializable {
 
     private String status;
 
+    private String reviewReasonType;
+
+    private String reviewRemark;
+
+    private String reviewResult;
+
+    private String reviewReply;
+
+    private Date reviewApplyTime;
+
+    private Date reviewHandleTime;
+
     private String manualFlag;
 
     private Date generatedTime;
+
+    private Date confirmTime;
+
+    private Date payTime;
+
+    private String payRemark;
 
     private String remark;
 

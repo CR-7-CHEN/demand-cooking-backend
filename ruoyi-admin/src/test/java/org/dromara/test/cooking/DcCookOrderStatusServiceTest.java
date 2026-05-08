@@ -1,6 +1,8 @@
 package org.dromara.test.cooking;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import org.dromara.common.core.exception.ServiceException;
+import org.dromara.system.domain.bo.cooking.DcCookOrderActionBo;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.cooking.DcCookChef;
@@ -21,6 +23,9 @@ import java.util.Date;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -87,6 +92,56 @@ public class DcCookOrderStatusServiceTest {
         verify(chefMapper, never()).updateById(any(DcCookChef.class));
     }
 
+    @Test
+    @DisplayName("chef service complete keeps waiting confirm and preserves planned end time")
+    public void serviceCompletePreservesPlannedEndTime() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(4L, DcCookOrderStatus.WAITING_SERVICE);
+        order.setServiceStartTime(hoursAgo(1));
+        Date plannedEndTime = hoursFromNow(2);
+        order.setServiceEndTime(plannedEndTime);
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+        when(orderMapper.updateById(any(DcCookOrder.class))).thenReturn(1);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+        Date before = new Date();
+
+        Boolean updated = service.serviceComplete(bo);
+
+        Date after = new Date();
+        assertTrue(updated);
+        assertEquals(DcCookOrderStatus.WAITING_CONFIRM, order.getStatus());
+        assertEquals(DcCookOrderStatus.COMPLETE_BY_CHEF, order.getServiceCompleteType());
+        assertNotNull(order.getServiceCompleteTime());
+        assertEquals(plannedEndTime, order.getServiceEndTime());
+        assertTrue(!order.getServiceCompleteTime().before(before) && !order.getServiceCompleteTime().after(after));
+        verify(messageMapper).insert(any(DcCookMessage.class));
+    }
+
+    @Test
+    @DisplayName("chef service complete rejects orders before service start")
+    public void serviceCompleteRejectsBeforeServiceStart() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(5L, DcCookOrderStatus.WAITING_SERVICE);
+        order.setServiceStartTime(hoursFromNow(1));
+        order.setServiceEndTime(hoursFromNow(4));
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.serviceComplete(bo));
+
+        assertEquals("service has not started", ex.getMessage());
+        verify(orderMapper, never()).updateById(any(DcCookOrder.class));
+        verify(messageMapper, never()).insert(any(DcCookMessage.class));
+    }
+
     private DcCookOrderServiceImpl newService(DcCookOrderMapper orderMapper, DcCookMessageMapper messageMapper) {
         return newService(orderMapper, mock(DcCookChefMapper.class), messageMapper);
     }
@@ -125,5 +180,9 @@ public class DcCookOrderStatusServiceTest {
 
     private Date hoursAgo(int hours) {
         return new Date(System.currentTimeMillis() - hours * 60 * 60_000L);
+    }
+
+    private Date hoursFromNow(int hours) {
+        return new Date(System.currentTimeMillis() + hours * 60 * 60_000L);
     }
 }

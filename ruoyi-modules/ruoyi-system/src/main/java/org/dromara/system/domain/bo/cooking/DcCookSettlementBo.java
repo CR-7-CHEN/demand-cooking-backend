@@ -22,5 +22,15 @@ public class DcCookSettlementBo extends BaseEntity {
 
     private String status;
 
+    private String reviewReasonType;
+
+    private String reviewRemark;
+
+    private String reviewResult;
+
+    private String reviewReply;
+
     private String manualFlag;
+
+    private String payRemark;
 }
