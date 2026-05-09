@@ -48,6 +48,10 @@ public class DcCookOrder extends TenantEntity {
 
     private Date serviceEndTime;
 
+    private String serviceStartedFlag;
+
+    private Date serviceStartedTime;
+
     private String status;
 
     private BigDecimal quoteAmount;

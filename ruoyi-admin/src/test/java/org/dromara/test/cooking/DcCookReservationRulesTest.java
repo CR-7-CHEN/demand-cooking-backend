@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -76,6 +77,28 @@ public class DcCookReservationRulesTest {
         verify(orderMapper).insert(captor.capture());
         long lockMillis = captor.getValue().getServiceEndTime().getTime() - bo.getServiceStartTime().getTime();
         assertEquals(3 * 60 * 60_000L, lockMillis);
+    }
+
+    @Test
+    @DisplayName("generates order number from today's maximum sequence")
+    void submitGeneratesOrderNoFromTodayMaxSequence() {
+        initTableInfo(DcCookOrder.class);
+
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, chefMapper, chefTimeMapper);
+        when(chefMapper.selectById(20L)).thenReturn(approvedChef(20L));
+        when(chefTimeMapper.exists(any(Wrapper.class))).thenReturn(true);
+        when(orderMapper.exists(any(Wrapper.class))).thenReturn(false);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(orderWithNo(todayOrderPrefix() + "0099")));
+        when(orderMapper.insert(any(DcCookOrder.class))).thenReturn(1);
+
+        service.submit(orderBo());
+
+        ArgumentCaptor<DcCookOrder> captor = ArgumentCaptor.forClass(DcCookOrder.class);
+        verify(orderMapper).insert(captor.capture());
+        assertEquals(todayOrderPrefix() + "0100", captor.getValue().getOrderNo());
     }
 
     @Test
@@ -144,6 +167,16 @@ public class DcCookReservationRulesTest {
 
     private Date hoursFromNow(int hours) {
         return new Date(System.currentTimeMillis() + hours * 60 * 60_000L);
+    }
+
+    private DcCookOrder orderWithNo(String orderNo) {
+        DcCookOrder order = new DcCookOrder();
+        order.setOrderNo(orderNo);
+        return order;
+    }
+
+    private String todayOrderPrefix() {
+        return "OD" + new java.text.SimpleDateFormat("yyyyMMdd").format(new Date());
     }
 
     private void initTableInfo(Class<?> entityClass) {

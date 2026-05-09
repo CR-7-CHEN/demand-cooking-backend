@@ -211,8 +211,29 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         order.setPayAmount(bo.getPayAmount() == null ? order.getQuoteAmount() : bo.getPayAmount());
         order.setPayNo(StringUtils.isBlank(bo.getPayNo()) ? "MOCK" + System.currentTimeMillis() : bo.getPayNo());
         order.setPayTime(new Date());
+        order.setServiceStartedFlag("0");
+        order.setServiceStartedTime(null);
         boolean ok = baseMapper.updateById(order) > 0;
         recordMessage("PAY_SUCCESS", "CHEF", order.getChefId(), order, "Mock payment success");
+        return ok;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public Boolean serviceStart(DcCookOrderActionBo bo) {
+        DcCookOrder order = requireOrder(bo.getOrderId());
+        assertStatus(order, DcCookOrderStatus.WAITING_SERVICE);
+        if (hasServiceStarted(order)) {
+            throw new ServiceException("service has already started");
+        }
+        Date startedAt = new Date();
+        if (order.getServiceStartTime() != null && startedAt.before(order.getServiceStartTime())) {
+            throw new ServiceException("service start time not reached");
+        }
+        order.setServiceStartedFlag("1");
+        order.setServiceStartedTime(startedAt);
+        boolean ok = baseMapper.updateById(order) > 0;
+        recordMessage("SERVICE_START", "USER", order.getUserId(), order, "Chef started cooking service");
         return ok;
     }
 
@@ -221,10 +242,10 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     public Boolean serviceComplete(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
         assertStatus(order, DcCookOrderStatus.WAITING_SERVICE);
-        Date completedAt = new Date();
-        if (order.getServiceStartTime() != null && completedAt.before(order.getServiceStartTime())) {
+        if (!hasServiceStarted(order)) {
             throw new ServiceException("service has not started");
         }
+        Date completedAt = new Date();
         order.setStatus(DcCookOrderStatus.WAITING_CONFIRM);
         order.setServiceCompleteTime(completedAt);
         order.setServiceCompleteType(DcCookOrderStatus.COMPLETE_BY_CHEF);
@@ -470,10 +491,20 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     }
 
     private String generateOrderNo() {
-        String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
-        Long count = baseMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
-            .likeRight(DcCookOrder::getOrderNo, "OD" + day));
-        return "OD" + day + String.format("%04d", count + 1);
+        String prefix = "OD" + new SimpleDateFormat("yyyyMMdd").format(new Date());
+        List<DcCookOrder> latestOrders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
+            .select(DcCookOrder::getOrderNo)
+            .likeRight(DcCookOrder::getOrderNo, prefix)
+            .orderByDesc(DcCookOrder::getOrderNo)
+            .last("limit 1"));
+        int sequence = 1;
+        if (latestOrders != null && !latestOrders.isEmpty() && StringUtils.isNotBlank(latestOrders.get(0).getOrderNo())) {
+            sequence = Integer.parseInt(latestOrders.get(0).getOrderNo().substring(prefix.length())) + 1;
+        }
+        if (sequence > 9999) {
+            throw new ServiceException("daily order number sequence exceeded");
+        }
+        return prefix + String.format("%04d", sequence);
     }
 
     private String defaultIfBlank(String value, String defaultValue) {
@@ -512,9 +543,13 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         if (!DcCookOrderStatus.WAITING_SERVICE.equals(order.getStatus())) {
             throw new ServiceException("paid order cannot be canceled now");
         }
-        if (order.getServiceStartTime() != null && !order.getServiceStartTime().after(new Date())) {
+        if (hasServiceStarted(order)) {
             throw new ServiceException("service has already started");
         }
+    }
+
+    private boolean hasServiceStarted(DcCookOrder order) {
+        return "1".equals(order.getServiceStartedFlag()) || order.getServiceStartedTime() != null;
     }
 
     private int getIntConfig(String key, int defaultValue) {

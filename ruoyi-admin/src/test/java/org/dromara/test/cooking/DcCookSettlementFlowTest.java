@@ -27,8 +27,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -158,6 +162,52 @@ public class DcCookSettlementFlowTest {
         assertEquals("PAID", result.getStatus());
     }
 
+    @Test
+    @DisplayName("generate monthly settlements creates only missing chef rows with completed orders")
+    void generateMonthlySettlementsCreatesOnlyMissingChefRowsWithCompletedOrders() {
+        initTableInfo(DcCookSettlement.class);
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookChef.class);
+
+        DcCookSettlementMapper settlementMapper = mock(DcCookSettlementMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        IDcCookConfigService configService = mock(IDcCookConfigService.class);
+
+        DcCookChef firstChef = chef(8L, "100.00");
+        DcCookChef existingChef = chef(9L, "100.00");
+        DcCookChef emptyChef = chef(10L, "100.00");
+        when(chefMapper.selectList(any())).thenReturn(List.of(firstChef, existingChef, emptyChef));
+        when(settlementMapper.exists(any())).thenReturn(false, true, false);
+        when(orderMapper.selectList(any())).thenReturn(List.of(order("200.00")), List.of());
+        when(orderMapper.selectCount(any())).thenReturn(0L);
+        when(configService.selectConfigValueByKey(eq("dc.cooking.platform.rate"))).thenReturn("0.20");
+        when(settlementMapper.insert(any(DcCookSettlement.class))).thenReturn(1);
+
+        DcCookSettlementServiceImpl service = new DcCookSettlementServiceImpl(
+            settlementMapper,
+            orderMapper,
+            chefMapper,
+            configService
+        );
+
+        int generated = service.generateMonthlySettlements("2026-04");
+
+        assertEquals(1, generated);
+        ArgumentCaptor<DcCookSettlement> captor = forClass(DcCookSettlement.class);
+        verify(settlementMapper).insert(captor.capture());
+        DcCookSettlement settlement = captor.getValue();
+        assertEquals(8L, settlement.getChefId());
+        assertEquals("2026-04", settlement.getSettlementMonth());
+        assertEquals("GENERATED", settlement.getStatus());
+        assertEquals("N", settlement.getManualFlag());
+        assertEquals(Integer.valueOf(1), settlement.getOrderCount());
+        assertBigDecimal("200.00", settlement.getOrderAmount());
+        assertBigDecimal("160.00", settlement.getChefCommission());
+        assertBigDecimal("260.00", settlement.getPayableAmount());
+        verify(orderMapper, times(2)).selectList(any());
+    }
+
     private DcCookSettlementServiceImpl newService(
         DcCookSettlementMapper settlementMapper,
         DcCookOrderMapper orderMapper,
@@ -192,6 +242,20 @@ public class DcCookSettlementFlowTest {
     private Object getProperty(Object target, String propertyName) {
         BeanWrapper wrapper = new BeanWrapperImpl(target);
         return wrapper.getPropertyValue(propertyName);
+    }
+
+    private DcCookChef chef(Long chefId, String baseSalary) {
+        DcCookChef chef = new DcCookChef();
+        chef.setChefId(chefId);
+        chef.setAuditStatus("1");
+        chef.setBaseSalary(new BigDecimal(baseSalary));
+        return chef;
+    }
+
+    private DcCookOrder order(String payAmount) {
+        DcCookOrder order = new DcCookOrder();
+        order.setPayAmount(new BigDecimal(payAmount));
+        return order;
     }
 
     private void assertBigDecimal(String expected, BigDecimal actual) {

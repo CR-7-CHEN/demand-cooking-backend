@@ -54,8 +54,7 @@ public final class DcCookOrderStatus {
     );
 
     public static final List<String> USER_TAB_COMPLETED_STATUSES = Arrays.asList(
-        COMPLETED, REJECTED_CLOSED, RESPONSE_TIMEOUT_CLOSED, OBJECTION_TIMEOUT_CLOSED,
-        PAY_TIMEOUT_CLOSED, CANCELED, REFUNDING, REFUNDED, REFUND_FAILED
+        COMPLETED
     );
 
     public static final String CANCEL_USER_UNPAID = "USER_UNPAID";

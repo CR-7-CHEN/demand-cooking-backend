@@ -96,6 +96,14 @@ public class DcCookOrderController {
         return orderService.paySuccess(bo) ? R.ok() : R.fail();
     }
 
+    @PostMapping({"/serviceStart", "/chef/serviceStart"})
+    public R<Void> serviceStart(@RequestBody DcCookOrderActionBo bo) {
+        if (isAppUser()) {
+            assertChefOrder(bo);
+        }
+        return orderService.serviceStart(bo) ? R.ok() : R.fail();
+    }
+
     @PostMapping({"/serviceComplete", "/chef/serviceComplete"})
     public R<Void> serviceComplete(@RequestBody DcCookOrderActionBo bo) {
         if (isAppUser()) {

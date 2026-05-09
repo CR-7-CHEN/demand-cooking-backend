@@ -19,9 +19,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.Date;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -122,13 +124,42 @@ public class DcCookOrderStatusServiceTest {
     }
 
     @Test
-    @DisplayName("chef service complete rejects orders before service start")
-    public void serviceCompleteRejectsBeforeServiceStart() {
+    @DisplayName("chef service start records actual start fields without changing main status")
+    public void serviceStartRecordsActualStartFields() throws Exception {
         DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
         DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
         DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
         DcCookOrder order = order(5L, DcCookOrderStatus.WAITING_SERVICE);
-        order.setServiceStartTime(hoursFromNow(1));
+        order.setServiceStartTime(hoursAgo(1));
+        order.setServiceEndTime(hoursFromNow(2));
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+        when(orderMapper.updateById(any(DcCookOrder.class))).thenReturn(1);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+        Date before = new Date();
+        Method method = assertDoesNotThrow(() -> DcCookOrderServiceImpl.class.getMethod("serviceStart", DcCookOrderActionBo.class));
+
+        Boolean updated = (Boolean) method.invoke(service, bo);
+
+        Date after = new Date();
+        assertTrue(updated);
+        assertEquals(DcCookOrderStatus.WAITING_SERVICE, order.getStatus());
+        assertEquals("1", order.getServiceStartedFlag());
+        assertNotNull(order.getServiceStartedTime());
+        assertTrue(!order.getServiceStartedTime().before(before) && !order.getServiceStartedTime().after(after));
+        verify(orderMapper).updateById(order);
+        verify(messageMapper).insert(any(DcCookMessage.class));
+    }
+
+    @Test
+    @DisplayName("chef service complete rejects orders before actual service start")
+    public void serviceCompleteRejectsBeforeActualServiceStart() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(6L, DcCookOrderStatus.WAITING_SERVICE);
+        order.setServiceStartTime(hoursAgo(1));
         order.setServiceEndTime(hoursFromNow(4));
         when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
 
@@ -138,6 +169,30 @@ public class DcCookOrderStatusServiceTest {
         ServiceException ex = assertThrows(ServiceException.class, () -> service.serviceComplete(bo));
 
         assertEquals("service has not started", ex.getMessage());
+        verify(orderMapper, never()).updateById(any(DcCookOrder.class));
+        verify(messageMapper, never()).insert(any(DcCookMessage.class));
+    }
+
+    @Test
+    @DisplayName("user cancel rejects orders after actual service start")
+    public void userCancelRejectsAfterActualServiceStart() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(7L, DcCookOrderStatus.WAITING_SERVICE);
+        order.setPayAmount(new java.math.BigDecimal("88.00"));
+        order.setServiceStartTime(hoursFromNow(2));
+        order.setServiceStartedFlag("1");
+        order.setServiceStartedTime(minutesAgo(5));
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+        bo.setCancelReason("user changed plan");
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.userCancel(bo));
+
+        assertEquals("service has already started", ex.getMessage());
         verify(orderMapper, never()).updateById(any(DcCookOrder.class));
         verify(messageMapper, never()).insert(any(DcCookMessage.class));
     }

@@ -1,6 +1,7 @@
 package org.dromara.test.cooking;
 
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
@@ -32,6 +33,34 @@ public class DcCookChefResignTest {
         DcCookChefServiceImpl service = newService(mock(DcCookChefMapper.class), mock(DcCookOrderMapper.class));
 
         ServiceException exception = assertThrows(ServiceException.class, () -> service.resign(1L, " "));
+
+        assertEquals("resignReason is required", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("admin edit requires resign reason when status becomes resigned")
+    void updateByBoRequiresReasonWhenStatusBecomesResigned() {
+        DcCookChefServiceImpl service = newService(mock(DcCookChefMapper.class), mock(DcCookOrderMapper.class));
+        DcCookChefBo bo = new DcCookChefBo();
+        bo.setChefId(10L);
+        bo.setChefStatus("3");
+        bo.setResignReason(" ");
+
+        ServiceException exception = assertThrows(ServiceException.class, () -> service.updateByBo(bo));
+
+        assertEquals("resignReason is required", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("admin status change requires resign reason when status becomes resigned")
+    void changeStatusRequiresReasonWhenStatusBecomesResigned() {
+        DcCookChefServiceImpl service = newService(mock(DcCookChefMapper.class), mock(DcCookOrderMapper.class));
+        DcCookChefBo bo = new DcCookChefBo();
+        bo.setChefId(10L);
+        bo.setChefStatus("3");
+        bo.setResignReason(" ");
+
+        ServiceException exception = assertThrows(ServiceException.class, () -> service.changeStatus(bo));
 
         assertEquals("resignReason is required", exception.getMessage());
     }

@@ -290,7 +290,11 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
         }
+        String resignReason = normalizeResignReason(bo.getChefStatus(), bo.getResignReason());
         DcCookChef update = MapstructUtils.convert(bo, DcCookChef.class);
+        if (STATUS_RESIGNED.equals(bo.getChefStatus())) {
+            update.setResignReason(resignReason);
+        }
         boolean updated = baseMapper.updateById(update) > 0;
         if (updated) {
             saveAvailableTimes(bo.getChefId(), bo.getAvailableTimes());
@@ -367,9 +371,13 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if ((STATUS_PAUSED.equals(status) || STATUS_RESIGNED.equals(status)) && hasUnfinishedOrder(bo.getChefId())) {
             throw new ServiceException("chef has unfinished orders");
         }
+        String resignReason = normalizeResignReason(status, bo.getResignReason());
         DcCookChef update = new DcCookChef();
         update.setChefId(bo.getChefId());
         update.setChefStatus(status);
+        if (STATUS_RESIGNED.equals(status)) {
+            update.setResignReason(resignReason);
+        }
         update.setRemark(bo.getRemark());
         return baseMapper.updateById(update) > 0;
     }
@@ -396,13 +404,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
 
     @Override
     public Boolean resign(Long userId, String resignReason) {
-        String reason = resignReason == null ? null : resignReason.trim();
-        if (StringUtils.isBlank(reason)) {
-            throw new ServiceException("resignReason is required");
-        }
-        if (reason.length() > 500) {
-            throw new ServiceException("resignReason max length is 500");
-        }
+        String reason = normalizeResignReason(STATUS_RESIGNED, resignReason);
         DcCookChef chef = requireChefByUserId(userId);
         if (hasUnfinishedOrder(chef.getChefId())) {
             throw new ServiceException("chef has unfinished orders");
@@ -425,6 +427,20 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         return !baseMapper.exists(Wrappers.lambdaQuery(DcCookChef.class)
             .eq(DcCookChef::getMobile, bo.getMobile())
             .ne(bo.getChefId() != null, DcCookChef::getChefId, bo.getChefId()));
+    }
+
+    private String normalizeResignReason(String status, String resignReason) {
+        if (!STATUS_RESIGNED.equals(status)) {
+            return resignReason;
+        }
+        String reason = resignReason == null ? null : resignReason.trim();
+        if (StringUtils.isBlank(reason)) {
+            throw new ServiceException("resignReason is required");
+        }
+        if (reason.length() > 500) {
+            throw new ServiceException("resignReason max length is 500");
+        }
+        return reason;
     }
 
     private DcCookChefWorkbenchVo.RevenueOverview buildRevenueOverview(Long chefId, Date todayStart, Date tomorrowStart,

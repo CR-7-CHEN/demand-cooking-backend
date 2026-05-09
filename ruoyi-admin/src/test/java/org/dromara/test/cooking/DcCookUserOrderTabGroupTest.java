@@ -37,8 +37,8 @@ public class DcCookUserOrderTabGroupTest {
             DcCookOrderStatus.statusesForUserTab("payment"));
         assertEquals(List.of(DcCookOrderStatus.WAITING_SERVICE, DcCookOrderStatus.WAITING_CONFIRM),
             DcCookOrderStatus.statusesForUserTab("serving"));
-        assertTrue(DcCookOrderStatus.statusesForUserTab("completed").contains(DcCookOrderStatus.COMPLETED));
-        assertTrue(DcCookOrderStatus.statusesForUserTab("completed").contains(DcCookOrderStatus.CANCELED));
+        assertEquals(List.of(DcCookOrderStatus.COMPLETED),
+            DcCookOrderStatus.statusesForUserTab("completed"));
     }
 
     @Test

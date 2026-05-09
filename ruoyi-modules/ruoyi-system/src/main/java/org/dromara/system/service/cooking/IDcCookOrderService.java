@@ -26,6 +26,8 @@ public interface IDcCookOrderService extends IDcCookOrderStatusService {
 
     Boolean paySuccess(DcCookOrderActionBo bo);
 
+    Boolean serviceStart(DcCookOrderActionBo bo);
+
     Boolean serviceComplete(DcCookOrderActionBo bo);
 
     Boolean confirm(DcCookOrderActionBo bo);

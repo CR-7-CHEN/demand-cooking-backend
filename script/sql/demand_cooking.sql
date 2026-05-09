@@ -204,6 +204,8 @@ CREATE TABLE IF NOT EXISTS dc_cook_order (
     user_remark               varchar(1000) DEFAULT NULL COMMENT '鐢ㄦ埛澶囨敞锛堝彛鍛?蹇屽彛绛夛級',
     service_start_time        datetime      NOT NULL COMMENT '鏈嶅姟寮€濮嬫椂闂?,
     service_end_time          datetime      NOT NULL COMMENT '鏈嶅姟缁撴潫鏃堕棿',
+    service_started_flag      char(1)       DEFAULT '0' COMMENT 'service started flag (0=no 1=yes)',
+    service_started_time      datetime      DEFAULT NULL COMMENT 'actual service started time',
     status                    varchar(40)   NOT NULL COMMENT '璁㈠崟鐘舵€?,
     quote_amount              decimal(12,2) DEFAULT NULL COMMENT '鎶ヤ环閲戦',
     quote_remark              varchar(1000) DEFAULT NULL COMMENT '鎶ヤ环澶囨敞',
@@ -242,6 +244,18 @@ CREATE TABLE IF NOT EXISTS dc_cook_order (
     KEY idx_dc_cook_order_month (tenant_id, chef_id, complete_time, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='璁㈠崟琛?;
 
+ALTER TABLE dc_cook_order
+    ADD COLUMN IF NOT EXISTS service_started_flag char(1) DEFAULT '0' COMMENT 'service started flag (0=no 1=yes)' AFTER service_end_time,
+    ADD COLUMN IF NOT EXISTS service_started_time datetime DEFAULT NULL COMMENT 'actual service started time' AFTER service_started_flag;
+
+UPDATE dc_cook_order
+SET service_started_flag = CASE
+    WHEN service_started_time IS NULL THEN '0'
+    ELSE '1'
+END
+WHERE service_started_flag IS NULL
+   OR service_started_flag = '';
+
 CREATE TABLE IF NOT EXISTS dc_cook_review (
     review_id           bigint(20)    NOT NULL COMMENT '璇勪环ID',
     tenant_id           varchar(20)   DEFAULT '000000' COMMENT '绉熸埛ID',
@@ -276,7 +290,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_complaint (
     complaint_type  varchar(60)   DEFAULT NULL COMMENT '鎶曡瘔绫诲瀷',
     content         varchar(1000) NOT NULL COMMENT '鎶曡瘔鍐呭',
     image_urls      varchar(1000) DEFAULT NULL COMMENT '鍥剧墖鍦板潃',
-    status          varchar(30)   DEFAULT 'PENDING' COMMENT '鐘舵€侊紙PENDING寰呭鐞?VALID鎴愮珛 INVALID涓嶆垚绔嬶級',
+    status          varchar(30)   DEFAULT 'PENDING' COMMENT '鐘舵€侊紙PENDING寰呭鐞?ESTABLISHED鎴愮珛 REJECTED涓嶆垚绔嬶級',
     handle_result   varchar(1000) DEFAULT NULL COMMENT '澶勭悊缁撴灉',
     handler_id      bigint(20)    DEFAULT NULL COMMENT '澶勭悊浜篒D',
     submit_time     datetime      DEFAULT NULL COMMENT '鎻愪氦鏃堕棿',
@@ -292,6 +306,61 @@ CREATE TABLE IF NOT EXISTS dc_cook_complaint (
     KEY idx_dc_cook_complaint_status (tenant_id, status, submit_time),
     KEY idx_dc_cook_complaint_chef (tenant_id, chef_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='鎶曡瘔璁板綍琛?;
+
+CREATE TABLE IF NOT EXISTS dc_cook_faq (
+    faq_id       bigint(20)    NOT NULL COMMENT 'FAQ ID',
+    tenant_id    varchar(20)   DEFAULT '000000' COMMENT '绉熸埛ID',
+    category     varchar(60)   NOT NULL COMMENT '鍒嗙被',
+    question     varchar(200)  NOT NULL COMMENT '闂',
+    answer       varchar(1000) NOT NULL COMMENT '鑷姩鍥炲',
+    keywords     varchar(300)  DEFAULT NULL COMMENT '鍏抽敭璇嶏紝閫楀彿鍒嗛殧',
+    sort         int           DEFAULT 0 COMMENT '鎺掑簭',
+    status       char(1)       DEFAULT '0' COMMENT '鐘舵€侊紙0鍚敤 1鍋滅敤锛?,
+    create_dept  bigint(20)    DEFAULT NULL COMMENT '鍒涘缓閮ㄩ棬',
+    create_by    bigint(20)    DEFAULT NULL COMMENT '鍒涘缓鑰?,
+    create_time  datetime      DEFAULT NULL COMMENT '鍒涘缓鏃堕棿',
+    update_by    bigint(20)    DEFAULT NULL COMMENT '鏇存柊鑰?,
+    update_time  datetime      DEFAULT NULL COMMENT '鏇存柊鏃堕棿',
+    remark       varchar(500)  DEFAULT NULL COMMENT '澶囨敞',
+    del_flag     char(1)       DEFAULT '0' COMMENT '鍒犻櫎鏍囧織',
+    PRIMARY KEY (faq_id),
+    KEY idx_dc_cook_faq_status (tenant_id, status, category, sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='涓婇棬鍋氶キFAQ琛?;
+
+CREATE TABLE IF NOT EXISTS dc_cook_support_ticket (
+    ticket_id    bigint(20)    NOT NULL COMMENT '宸ュ崟ID',
+    tenant_id    varchar(20)   DEFAULT '000000' COMMENT '绉熸埛ID',
+    user_id      bigint(20)    NOT NULL COMMENT '鐢ㄦ埛ID',
+    order_id     bigint(20)    DEFAULT NULL COMMENT '鍏宠仈璁㈠崟ID',
+    question     varchar(1000) NOT NULL COMMENT '鐢ㄦ埛闂',
+    reply        varchar(1000) DEFAULT NULL COMMENT '澶勭悊鍥炲',
+    status       varchar(20)   DEFAULT 'PENDING' COMMENT '鐘舵€侊紙PENDING寰呭鐞?REPLIED宸插洖澶?CLOSED宸插叧闂級',
+    handler_id   bigint(20)    DEFAULT NULL COMMENT '澶勭悊浜篒D',
+    handle_time  datetime      DEFAULT NULL COMMENT '澶勭悊鏃堕棿',
+    close_time   datetime      DEFAULT NULL COMMENT '鍏抽棴鏃堕棿',
+    create_dept  bigint(20)    DEFAULT NULL COMMENT '鍒涘缓閮ㄩ棬',
+    create_by    bigint(20)    DEFAULT NULL COMMENT '鍒涘缓鑰?,
+    create_time  datetime      DEFAULT NULL COMMENT '鍒涘缓鏃堕棿',
+    update_by    bigint(20)    DEFAULT NULL COMMENT '鏇存柊鑰?,
+    update_time  datetime     DEFAULT NULL COMMENT '鏇存柊鏃堕棿',
+    remark       varchar(500)  DEFAULT NULL COMMENT '澶囨敞',
+    del_flag     char(1)       DEFAULT '0' COMMENT '鍒犻櫎鏍囧織',
+    PRIMARY KEY (ticket_id),
+    KEY idx_dc_cook_support_ticket_user (tenant_id, user_id, status, create_time),
+    KEY idx_dc_cook_support_ticket_order (tenant_id, order_id),
+    KEY idx_dc_cook_support_ticket_status (tenant_id, status, create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='涓婇棬鍋氶キ瀹㈡湇宸ュ崟琛?;
+
+DELETE FROM dc_cook_faq WHERE faq_id BETWEEN 300101 AND 300105;
+
+INSERT INTO dc_cook_faq
+(faq_id, tenant_id, category, question, answer, keywords, sort, status, create_dept, create_by, create_time, remark)
+VALUES
+(300101, '000000', '璁㈠崟闂', '濡備綍鏌ョ湅璁㈠崟鐘舵€?', '鍙湪璁㈠崟璇︽儏鏌ョ湅褰撳墠鐘舵€侊紝涔熷彲浠ュ湪瀹㈡湇鏈哄櫒浜轰腑杈撳叆璁㈠崟鐘舵€佹煡璇€?', '璁㈠崟鐘舵€?杩涘害,鏌ョ湅璁㈠崟', 1, '0', 103, 1, NOW(), '棣栫増FAQ'),
+(300102, '000000', '璁㈠崟闂', '濡備綍鍙栨秷璁㈠崟', '鏈粯娆捐鍗曞彲鍦ㄨ鍗曡鎯呭彇娑堬紱宸蹭粯娆捐鍗曢渶婊¤冻鍙栨秷瑙勫垯鍚庢彁浜ゅ彇娑堢敵璇枫€?', '鍙栨秷璁㈠崟,閫€鍗?涓嶆兂瑕?', 2, '0', 103, 1, NOW(), '棣栫増FAQ'),
+(300103, '000000', '鏀粯闂', '鏀粯瓒呮椂鎬庝箞鍔?', '鏀粯瓒呮椂鍚庤鍗曚細鑷姩鍏抽棴锛屽彲閲嶆柊鍙戣捣棰勭害銆?', '鏀粯瓒呮椂,浠樻瓒呮椂,鏃犳硶鏀粯', 3, '0', 103, 1, NOW(), '棣栫増FAQ'),
+(300104, '000000', '鏈嶅姟闂', '鍋氶キ浜哄憳浠€涔堟椂鍊欎笂闂?', '鍋氶キ浜哄憳浼氭寜棰勭害鏃堕棿涓婇棬鏈嶅姟锛岃淇濇寔鑱旂郴鐢佃瘽鐣呴€氥€?', '涓婇棬鏃堕棿,浠€涔堟椂鍊欐潵,鍋氶キ浜哄憳', 4, '0', 103, 1, NOW(), '棣栫増FAQ'),
+(300105, '000000', '宸ュ崟闂', '鏈哄櫒浜烘棤娉曞洖绛旀€庝箞鍔?', '鏈哄櫒浜烘棤娉曞洖绛旂殑闂鍙互鎻愪氦宸ュ崟锛屽悗鍙板鐞嗗悗浼氬睍绀哄鐞嗗洖澶嶃€?', '鏃犳硶鍥炵瓟,宸ュ崟,鎻愪氦闂', 5, '0', 103, 1, NOW(), '棣栫増FAQ');
 
 CREATE TABLE IF NOT EXISTS dc_cook_settlement (
     settlement_id          bigint(20)    NOT NULL COMMENT '缁撶畻ID',
@@ -438,7 +507,9 @@ VALUES
 (300007, '鍦板潃绠＄悊', 300000, 7, 'address', 'cooking/address/index', '', 1, 0, 'C', '0', '0', 'cooking:address:list', 'form', 103, 1, NOW(), NULL, NULL, '鍦板潃绠＄悊'),
 (300008, '鏈嶅姟鍖哄煙', 300000, 8, 'area', 'cooking/area/index', '', 1, 0, 'C', '0', '0', 'cooking:area:list', 'tree', 103, 1, NOW(), NULL, NULL, '鏈嶅姟鍖哄煙'),
 (300009, '娑堟伅璁板綍', 300000, 9, 'message', 'cooking/message/index', '', 1, 0, 'C', '0', '0', 'cooking:message:list', 'message', 103, 1, NOW(), NULL, NULL, '娑堟伅璁板綍'),
-(300010, '璇勪环绠＄悊', 300000, 10, 'review', 'cooking/review/index', '', 1, 0, 'C', '0', '0', 'cooking:review:list', 'star', 103, 1, NOW(), NULL, NULL, '璇勪环绠＄悊');
+(300010, '璇勪环绠＄悊', 300000, 10, 'review', 'cooking/review/index', '', 1, 0, 'C', '0', '0', 'cooking:review:list', 'star', 103, 1, NOW(), NULL, NULL, '璇勪环绠＄悊'),
+(300011, 'FAQ绠＄悊', 300000, 11, 'faq', 'cooking/faq/index', '', 1, 0, 'C', '0', '0', 'cooking:supportFaq:list', 'question', 103, 1, NOW(), NULL, NULL, 'FAQ绠＄悊'),
+(300012, '宸ュ崟绠＄悊', 300000, 12, 'ticket', 'cooking/ticket/index', '', 1, 0, 'C', '0', '0', 'cooking:supportTicket:list', 'form', 103, 1, NOW(), NULL, NULL, '宸ュ崟绠＄悊');
 
 INSERT INTO sys_menu
 (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_dept, create_by, create_time, update_by, update_time, remark)
@@ -457,7 +528,12 @@ VALUES
 (300031, '閰嶇疆缂栬緫', 300006, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:config:edit', '#', 103, 1, NOW(), NULL, NULL, ''),
 (300032, '鍖哄煙缂栬緫', 300008, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:area:edit', '#', 103, 1, NOW(), NULL, NULL, ''),
 (300033, '娑堟伅鏌ョ湅', 300009, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:message:query', '#', 103, 1, NOW(), NULL, NULL, ''),
-(300034, '璇勪环缂栬緫', 300010, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:review:edit', '#', 103, 1, NOW(), NULL, NULL, '');
+(300034, '璇勪环缂栬緫', 300010, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:review:edit', '#', 103, 1, NOW(), NULL, NULL, ''),
+(300040, 'FAQ鏂板', 300011, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:supportFaq:add', '#', 103, 1, NOW(), NULL, NULL, ''),
+(300041, 'FAQ缂栬緫', 300011, 2, '', '', '', 1, 0, 'F', '0', '0', 'cooking:supportFaq:edit', '#', 103, 1, NOW(), NULL, NULL, ''),
+(300042, 'FAQ鍒犻櫎', 300011, 3, '', '', '', 1, 0, 'F', '0', '0', 'cooking:supportFaq:remove', '#', 103, 1, NOW(), NULL, NULL, ''),
+(300043, '宸ュ崟澶勭悊', 300012, 1, '', '', '', 1, 0, 'F', '0', '0', 'cooking:supportTicket:handle', '#', 103, 1, NOW(), NULL, NULL, ''),
+(300044, '宸ュ崟鍏抽棴', 300012, 2, '', '', '', 1, 0, 'F', '0', '0', 'cooking:supportTicket:close', '#', 103, 1, NOW(), NULL, NULL, '');
 
 -- ----------------------------
 -- 闅愯棌闈炲繀瑕侀《灞傝彍鍗曪紙淇濈暀锛氶椤点€佷笂闂ㄥ仛楗€佺郴缁熺鐞嗭級
@@ -479,5 +555,31 @@ UPDATE sys_menu SET visible = '1' WHERE menu_id IN (102, 103, 104, 105, 108, 123
 
 -- 寮€鍚处鍙疯嚜鍔╂敞鍐岋紝渚涘皬绋嬪簭鐢ㄦ埛娉ㄥ唽浣跨敤
 UPDATE sys_config SET config_value = 'true' WHERE config_key = 'sys.account.registerUser';
+
+-- ----------------------------
+-- SnailJob 月度结算自动生成任务
+-- 每月 1 日 02:00 生成上月做饭人员结算；生成后仍需做饭人员确认、平台打款。
+-- ----------------------------
+INSERT INTO sj_job
+(namespace_id, biz_id, group_name, job_name, args_str, args_type, next_trigger_at, job_status, task_type, route_key, executor_type, executor_info, trigger_type, trigger_interval, block_strategy, executor_timeout, max_retry_times, parallel_num, retry_interval, bucket_index, resident, notify_ids, owner_id, labels, description, ext_attrs, deleted, create_dt, update_dt)
+VALUES
+('dev', 'cooking-monthly-settlement', 'ruoyi_group', '上门做饭月度结算自动生成', NULL, 1, UNIX_TIMESTAMP() * 1000, 1, 1, 4, 1, 'cookingMonthlySettlementTask', 1, '0 0 2 1 * ?', 1, 600, 3, 1, 60, 0, 0, '', 1, 'cooking,settlement', '每月1日02:00自动生成上月做饭人员结算，生成后仍需做饭人员确认和平台打款', '', 0, NOW(), NOW()),
+('prod', 'cooking-monthly-settlement', 'ruoyi_group', '上门做饭月度结算自动生成', NULL, 1, UNIX_TIMESTAMP() * 1000, 1, 1, 4, 1, 'cookingMonthlySettlementTask', 1, '0 0 2 1 * ?', 1, 600, 3, 1, 60, 0, 0, '', 1, 'cooking,settlement', '每月1日02:00自动生成上月做饭人员结算，生成后仍需做饭人员确认和平台打款', '', 0, NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+    group_name = VALUES(group_name),
+    job_name = VALUES(job_name),
+    job_status = VALUES(job_status),
+    executor_type = VALUES(executor_type),
+    executor_info = VALUES(executor_info),
+    trigger_type = VALUES(trigger_type),
+    trigger_interval = VALUES(trigger_interval),
+    block_strategy = VALUES(block_strategy),
+    executor_timeout = VALUES(executor_timeout),
+    max_retry_times = VALUES(max_retry_times),
+    retry_interval = VALUES(retry_interval),
+    labels = VALUES(labels),
+    description = VALUES(description),
+    deleted = 0,
+    update_dt = NOW();
 
 SET FOREIGN_KEY_CHECKS = 1;

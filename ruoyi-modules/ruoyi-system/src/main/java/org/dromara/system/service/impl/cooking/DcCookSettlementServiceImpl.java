@@ -39,6 +39,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
 
     private static final BigDecimal DEFAULT_PLATFORM_RATE = new BigDecimal("0.20");
     private static final BigDecimal VIOLATION_DEDUCTION = new BigDecimal("200");
+    private static final String AUDIT_APPROVED = "1";
 
     private final DcCookSettlementMapper baseMapper;
     private final DcCookOrderMapper orderMapper;
@@ -78,6 +79,48 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         settlement.setStatus(DcCookSettlementStatus.GENERATED);
         baseMapper.insert(settlement);
         return queryById(settlement.getSettlementId());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int generatePreviousMonthSettlements() {
+        return generateMonthlySettlements(YearMonth.now().minusMonths(1).toString());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int generateMonthlySettlements(String settlementMonth) {
+        String month = resolveSettlementMonth(settlementMonth);
+        List<DcCookChef> chefs = chefMapper.selectList(Wrappers.lambdaQuery(DcCookChef.class)
+            .eq(DcCookChef::getAuditStatus, AUDIT_APPROVED));
+        int generated = 0;
+        for (DcCookChef chef : chefs) {
+            if (chef == null || chef.getChefId() == null) {
+                continue;
+            }
+            Long chefId = chef.getChefId();
+            boolean exists = baseMapper.exists(Wrappers.lambdaQuery(DcCookSettlement.class)
+                .eq(DcCookSettlement::getChefId, chefId)
+                .eq(DcCookSettlement::getSettlementMonth, month));
+            if (exists) {
+                continue;
+            }
+            List<DcCookOrder> orders = orderMapper.selectList(buildCompletedOrderMonthWrapper(chefId, month));
+            if (orders == null || orders.isEmpty()) {
+                continue;
+            }
+
+            DcCookSettlement settlement = new DcCookSettlement();
+            settlement.setChefId(chefId);
+            settlement.setSettlementMonth(month);
+            settlement.setManualFlag("N");
+            rebuildSettlement(settlement, chef, orders);
+            settlement.setStatus(DcCookSettlementStatus.GENERATED);
+            if (baseMapper.insert(settlement) > 0) {
+                generated++;
+            }
+        }
+        return generated;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -157,6 +200,12 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         }
 
         List<DcCookOrder> orders = orderMapper.selectList(buildCompletedOrderMonthWrapper(chefId, month));
+        rebuildSettlement(settlement, chef, orders);
+    }
+
+    private void rebuildSettlement(DcCookSettlement settlement, DcCookChef chef, List<DcCookOrder> orders) {
+        Long chefId = settlement.getChefId();
+        String month = resolveSettlementMonth(settlement.getSettlementMonth());
         BigDecimal orderAmount = sumOrderAmount(orders);
         BigDecimal platformRate = getDecimalConfig("dc.cooking.platform.rate", DEFAULT_PLATFORM_RATE);
         BigDecimal chefRate = BigDecimal.ONE.subtract(platformRate);

@@ -16,6 +16,10 @@ public interface IDcCookSettlementService {
 
     DcCookSettlementVo generateMonth(DcCookSettlementBo bo);
 
+    int generatePreviousMonthSettlements();
+
+    int generateMonthlySettlements(String settlementMonth);
+
     Boolean applyReview(DcCookSettlementBo bo);
 
     Boolean handleReview(DcCookSettlementBo bo);
