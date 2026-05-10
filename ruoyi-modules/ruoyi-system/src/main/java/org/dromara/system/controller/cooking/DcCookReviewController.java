@@ -35,6 +35,6 @@ public class DcCookReviewController {
 
     @PutMapping("/hide/{reviewId}")
     public R<Void> hide(@PathVariable Long reviewId) {
-        return reviewService.hide(reviewId) ? R.ok() : R.fail();
+        return reviewService.toggleDisplayStatus(reviewId) ? R.ok() : R.fail();
     }
 }

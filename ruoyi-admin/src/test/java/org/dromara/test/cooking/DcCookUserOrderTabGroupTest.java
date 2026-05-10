@@ -1,6 +1,9 @@
 package org.dromara.test.cooking;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
@@ -44,18 +47,53 @@ public class DcCookUserOrderTabGroupTest {
     @Test
     @DisplayName("statusGroup filter builds grouped status query")
     void statusGroupFilterBuildsGroupedQuery() throws Exception {
+        initTableInfo(DcCookOrder.class);
         DcCookOrderServiceImpl service = newService();
         DcCookOrderBo bo = new DcCookOrderBo();
         bo.setUserId(100L);
         bo.setStatusGroup("payment");
 
         LambdaQueryWrapper<DcCookOrder> wrapper = invokeBuildQueryWrapper(service, bo);
+        String sqlSegment = wrapper.getSqlSegment();
         Map<String, Object> values = wrapper.getParamNameValuePairs();
 
-        assertTrue(values.containsValue(100L));
-        assertTrue(values.containsValue(DcCookOrderStatus.WAITING_PAY));
-        assertTrue(values.containsValue(DcCookOrderStatus.PRICE_OBJECTION));
-        assertTrue(wrapper.getSqlSegment().contains("status"));
+        assertTrue(containsParamValue(values, 100L));
+        assertTrue(containsParamValue(values, DcCookOrderStatus.WAITING_PAY));
+        assertTrue(containsParamValue(values, DcCookOrderStatus.PRICE_OBJECTION));
+        assertTrue(sqlSegment.contains("status"));
+    }
+
+    @Test
+    @DisplayName("chef name filter builds chef subquery for admin order list")
+    void chefNameFilterBuildsChefSubquery() throws Exception {
+        initTableInfo(DcCookOrder.class);
+        DcCookOrderServiceImpl service = newService();
+        DcCookOrderBo bo = new DcCookOrderBo();
+        bo.setChefName("Chef A");
+
+        LambdaQueryWrapper<DcCookOrder> wrapper = invokeBuildQueryWrapper(service, bo);
+        String sqlSegment = wrapper.getSqlSegment();
+        Map<String, Object> values = wrapper.getParamNameValuePairs();
+
+        assertTrue(containsParamValue(values, "Chef A"));
+        assertTrue(sqlSegment.contains("dc_cook_chef"));
+        assertTrue(sqlSegment.contains("chef_name"));
+    }
+
+    private boolean containsParamValue(Map<String, Object> values, Object expected) {
+        return values.values().stream().anyMatch(value -> {
+            if (expected.equals(value)) {
+                return true;
+            }
+            if (value instanceof Iterable<?> iterable) {
+                for (Object item : iterable) {
+                    if (expected.equals(item)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        });
     }
 
     private DcCookOrderServiceImpl newService() {
@@ -68,6 +106,15 @@ public class DcCookUserOrderTabGroupTest {
             mock(SysUserMapper.class),
             mock(IDcCookConfigService.class)
         );
+    }
+
+    private void initTableInfo(Class<?> entityClass) {
+        if (TableInfoHelper.getTableInfo(entityClass) != null) {
+            return;
+        }
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), entityClass.getName());
+        assistant.setCurrentNamespace(entityClass.getName());
+        TableInfoHelper.initTableInfo(assistant, entityClass);
     }
 
     @SuppressWarnings("unchecked")

@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -243,7 +244,14 @@ public class DcCookChefController {
     }
 
     @DeleteMapping("/cooking/chef/time")
-    public R<Void> deleteTime(@RequestParam("id") Long timeId) {
+    public R<Void> deleteTime(@RequestParam(value = "id", required = false) Long timeId,
+                              @RequestBody(required = false) Map<String, Long> body) {
+        if (timeId == null && body != null) {
+            timeId = body.get("timeId");
+            if (timeId == null) {
+                timeId = body.get("id");
+            }
+        }
         DcCookChefVo chef = requireCurrentChef();
         return chefTimeService.deleteById(timeId, chef.getChefId()) ? R.ok() : R.fail();
     }

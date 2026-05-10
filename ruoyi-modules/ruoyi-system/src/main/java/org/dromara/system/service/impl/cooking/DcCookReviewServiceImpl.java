@@ -90,10 +90,14 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
     }
 
     @Override
-    public Boolean hide(Long reviewId) {
+    public Boolean toggleDisplayStatus(Long reviewId) {
+        DcCookReview review = baseMapper.selectById(reviewId);
+        if (review == null) {
+            return false;
+        }
         DcCookReview update = new DcCookReview();
         update.setReviewId(reviewId);
-        update.setDisplayStatus("HIDE");
+        update.setDisplayStatus("HIDE".equalsIgnoreCase(review.getDisplayStatus()) ? "SHOW" : "HIDE");
         return baseMapper.updateById(update) > 0;
     }
 

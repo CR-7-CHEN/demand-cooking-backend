@@ -24,6 +24,10 @@ public class DcCookChefWorkbenchVo implements Serializable {
 
     private RevenueOverview revenueOverview;
 
+    private Long orderReminderCount;
+
+    private Long orderTotalCount;
+
     private List<AlertItem> alerts;
 
     private List<TrendItem> revenueTrend;
@@ -39,6 +43,8 @@ public class DcCookChefWorkbenchVo implements Serializable {
         private BigDecimal monthIncome;
 
         private BigDecimal monthCommissionAmount;
+
+        private BigDecimal monthBaseSalary;
 
         private Long monthCompletedOrders;
 

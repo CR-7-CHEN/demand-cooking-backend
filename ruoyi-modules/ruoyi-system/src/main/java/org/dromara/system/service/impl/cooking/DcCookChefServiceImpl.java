@@ -10,6 +10,7 @@ import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
+import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
 import org.dromara.system.domain.cooking.DcCookChef;
@@ -22,6 +23,7 @@ import org.dromara.system.domain.vo.cooking.DcCookChefCommissionOrdersVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefWorkbenchVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefTimeVo;
+import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
@@ -70,6 +72,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private final DcCookReviewMapper reviewMapper;
     private final DcCookSettlementMapper settlementMapper;
     private final IDcCookConfigService configService;
+    private final SysUserMapper userMapper;
 
     @Override
     public DcCookChefVo queryById(Long chefId) {
@@ -115,7 +118,9 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         vo.setChefStatus(chef.getChefStatus());
         vo.setAuditStatus(chef.getAuditStatus());
         vo.setTakingOrders(STATUS_NORMAL.equals(chef.getChefStatus()));
-        vo.setRevenueOverview(buildRevenueOverview(chef.getChefId(), todayStart, tomorrowStart, monthStart, nextMonthStart));
+        vo.setRevenueOverview(buildRevenueOverview(chef, todayStart, tomorrowStart, monthStart, nextMonthStart));
+        vo.setOrderReminderCount(buildOrderReminderCount(chef.getChefId()));
+        vo.setOrderTotalCount(buildOrderTotalCount(chef.getChefId()));
         vo.setAlerts(buildWorkbenchAlerts(chef, todayStart, tomorrowStart));
         vo.setRevenueTrend(buildRevenueTrend(chef.getChefId(), today));
         return vo;
@@ -258,6 +263,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
         }
+        validateUserPhoneAvailable(bo);
         DcCookChef add = MapstructUtils.convert(bo, DcCookChef.class);
         if (add.getAuditStatus() == null) {
             add.setAuditStatus(AUDIT_PENDING);
@@ -280,6 +286,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         boolean inserted = baseMapper.insert(add) > 0;
         if (inserted) {
             saveAvailableTimes(add.getChefId(), bo.getAvailableTimes());
+            syncUserPhone(bo);
         }
         return inserted;
     }
@@ -290,6 +297,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
         }
+        validateUserPhoneAvailable(bo);
         String resignReason = normalizeResignReason(bo.getChefStatus(), bo.getResignReason());
         DcCookChef update = MapstructUtils.convert(bo, DcCookChef.class);
         if (STATUS_RESIGNED.equals(bo.getChefStatus())) {
@@ -298,6 +306,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         boolean updated = baseMapper.updateById(update) > 0;
         if (updated) {
             saveAvailableTimes(bo.getChefId(), bo.getAvailableTimes());
+            syncUserPhone(bo);
         }
         return updated;
     }
@@ -429,6 +438,27 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             .ne(bo.getChefId() != null, DcCookChef::getChefId, bo.getChefId()));
     }
 
+    private void validateUserPhoneAvailable(DcCookChefBo bo) {
+        if (bo == null || bo.getUserId() == null || StringUtils.isBlank(bo.getMobile())) {
+            return;
+        }
+        boolean exists = userMapper.exists(Wrappers.lambdaQuery(SysUser.class)
+            .eq(SysUser::getPhonenumber, bo.getMobile())
+            .ne(SysUser::getUserId, bo.getUserId()));
+        if (exists) {
+            throw new ServiceException("User phone already exists");
+        }
+    }
+
+    private void syncUserPhone(DcCookChefBo bo) {
+        if (bo == null || bo.getUserId() == null || StringUtils.isBlank(bo.getMobile())) {
+            return;
+        }
+        userMapper.update(null, Wrappers.lambdaUpdate(SysUser.class)
+            .set(SysUser::getPhonenumber, bo.getMobile())
+            .eq(SysUser::getUserId, bo.getUserId()));
+    }
+
     private String normalizeResignReason(String status, String resignReason) {
         if (!STATUS_RESIGNED.equals(status)) {
             return resignReason;
@@ -443,9 +473,10 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         return reason;
     }
 
-    private DcCookChefWorkbenchVo.RevenueOverview buildRevenueOverview(Long chefId, Date todayStart, Date tomorrowStart,
+    private DcCookChefWorkbenchVo.RevenueOverview buildRevenueOverview(DcCookChef chef, Date todayStart, Date tomorrowStart,
                                                                        Date monthStart, Date nextMonthStart) {
         DcCookChefWorkbenchVo.RevenueOverview overview = new DcCookChefWorkbenchVo.RevenueOverview();
+        Long chefId = chef.getChefId();
         BigDecimal todayCommission = sumCommissionAmount(chefId, todayStart, tomorrowStart);
         BigDecimal monthCommission = sumCommissionAmount(chefId, monthStart, nextMonthStart);
         overview.setTodayIncome(todayCommission);
@@ -459,8 +490,10 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             .orderByDesc(DcCookSettlement::getGeneratedTime)
             .orderByDesc(DcCookSettlement::getSettlementId)
             .last("limit 1"), false);
+        BigDecimal monthBaseSalary = defaultAmount(settlement == null ? chef.getBaseSalary() : settlement.getBaseSalary());
+        overview.setMonthBaseSalary(monthBaseSalary);
         overview.setMonthDeduction(defaultAmount(settlement == null ? null : settlement.getViolationDeduction()));
-        overview.setMonthPayableAmount(defaultAmount(settlement == null ? null : settlement.getPayableAmount()));
+        overview.setMonthPayableAmount(monthBaseSalary.add(monthCommission));
         return overview;
     }
 
@@ -526,6 +559,17 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             trend.add(item);
         }
         return trend;
+    }
+
+    private Long buildOrderReminderCount(Long chefId) {
+        return countOrdersByStatus(chefId, DcCookOrderStatus.WAITING_RESPONSE)
+            + countOrdersByStatus(chefId, DcCookOrderStatus.WAITING_SERVICE)
+            + countOrdersByStatus(chefId, DcCookOrderStatus.PRICE_OBJECTION);
+    }
+
+    private Long buildOrderTotalCount(Long chefId) {
+        return orderMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
+            .eq(DcCookOrder::getChefId, chefId));
     }
 
     private Long countMonthCompletedOrders(Long chefId, Date monthStart, Date nextMonthStart) {

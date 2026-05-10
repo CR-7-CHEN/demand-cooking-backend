@@ -32,6 +32,14 @@ public class DcCookMessageVo implements Serializable {
 
     private Long receiverId;
 
+    private String receiverName;
+
+    private String userName;
+
+    private String nickName;
+
+    private String chefName;
+
     private String receiverMobileMask;
 
     private String receiverOpenidMask;

@@ -7,6 +7,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
+import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
@@ -38,7 +39,8 @@ public class DcCookChefAppListFilterTest {
             mock(DcCookOrderMapper.class),
             mock(DcCookReviewMapper.class),
             mock(DcCookSettlementMapper.class),
-            mock(IDcCookConfigService.class)
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
         );
 
         LambdaQueryWrapper<DcCookChef> wrapper = invokeBuildAppWrapper(service, new DcCookChefBo());

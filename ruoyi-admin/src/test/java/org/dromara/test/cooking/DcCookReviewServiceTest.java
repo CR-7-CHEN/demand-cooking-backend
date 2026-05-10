@@ -16,10 +16,12 @@ import org.dromara.system.service.impl.cooking.DcCookReviewServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationContext;
 
 import java.util.Date;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -69,5 +71,34 @@ public class DcCookReviewServiceTest {
 
         assertTrue(service.submit(bo));
         verify(ratingHelper).refreshRating(9L);
+    }
+
+    @Test
+    @DisplayName("toggle display status restores hidden reviews to shown")
+    void toggleDisplayStatusRestoresHiddenReviewsToShown() {
+        DcCookReviewMapper reviewMapper = mock(DcCookReviewMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefRatingHelper ratingHelper = mock(DcCookChefRatingHelper.class);
+        DcCookReviewServiceImpl service = new DcCookReviewServiceImpl(
+            reviewMapper,
+            orderMapper,
+            userMapper,
+            chefMapper,
+            ratingHelper
+        );
+        DcCookReview hiddenReview = new DcCookReview();
+        hiddenReview.setReviewId(200L);
+        hiddenReview.setDisplayStatus("HIDE");
+        when(reviewMapper.selectById(200L)).thenReturn(hiddenReview);
+        when(reviewMapper.updateById(any(DcCookReview.class))).thenReturn(1);
+
+        assertTrue(service.toggleDisplayStatus(200L));
+
+        ArgumentCaptor<DcCookReview> captor = ArgumentCaptor.forClass(DcCookReview.class);
+        verify(reviewMapper).updateById(captor.capture());
+        assertEquals(200L, captor.getValue().getReviewId());
+        assertEquals("SHOW", captor.getValue().getDisplayStatus());
     }
 }

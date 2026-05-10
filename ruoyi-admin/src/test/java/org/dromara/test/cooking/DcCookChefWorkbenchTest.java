@@ -10,6 +10,7 @@ import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookSettlement;
 import org.dromara.system.domain.vo.cooking.DcCookChefWorkbenchVo;
+import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
@@ -82,7 +83,8 @@ public class DcCookChefWorkbenchTest {
             orderMapper,
             mock(DcCookReviewMapper.class),
             settlementMapper,
-            mock(IDcCookConfigService.class)
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
         );
 
         DcCookChef chef = new DcCookChef();
@@ -118,7 +120,8 @@ public class DcCookChefWorkbenchTest {
             orderMapper,
             mock(DcCookReviewMapper.class),
             settlementMapper,
-            mock(IDcCookConfigService.class)
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
         );
 
         DcCookChef chef = new DcCookChef();
@@ -148,6 +151,102 @@ public class DcCookChefWorkbenchTest {
         assertEquals(new BigDecimal("70.40"), workbench.getRevenueTrend().get(workbench.getRevenueTrend().size() - 1).getAmount());
     }
 
+    @Test
+    @DisplayName("workbench exposes total order count and reminder count only for actionable statuses")
+    void workbenchExposesTotalOrderCountAndActionableReminderCount() {
+        initTableInfo(DcCookChef.class);
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookSettlement.class);
+
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookSettlementMapper settlementMapper = mock(DcCookSettlementMapper.class);
+        DcCookChefServiceImpl service = new DcCookChefServiceImpl(
+            chefMapper,
+            mock(DcCookChefTimeMapper.class),
+            orderMapper,
+            mock(DcCookReviewMapper.class),
+            settlementMapper,
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
+        );
+
+        DcCookChef chef = new DcCookChef();
+        chef.setChefId(10L);
+        chef.setUserId(1L);
+        chef.setAuditStatus("1");
+        chef.setChefStatus("0");
+        chef.setHealthCertExpireDate(Date.from(LocalDate.now().plusDays(60).atStartOfDay(ZoneId.systemDefault()).toInstant()));
+
+        when(chefMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(chef);
+        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(2L, 3L, 1L, 12L, 2L, 1L, 4L);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(settlementMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(null);
+
+        DcCookChefWorkbenchVo workbench = service.queryWorkbench(1L);
+
+        assertEquals(6L, workbench.getOrderReminderCount());
+        assertEquals(12L, workbench.getOrderTotalCount());
+    }
+
+    @Test
+    @DisplayName("workbench payable amount display uses base salary plus gross commission")
+    void workbenchPayableAmountDisplayUsesBaseSalaryPlusGrossCommission() {
+        initTableInfo(DcCookChef.class);
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookSettlement.class);
+
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookSettlementMapper settlementMapper = mock(DcCookSettlementMapper.class);
+        DcCookChefServiceImpl service = new DcCookChefServiceImpl(
+            chefMapper,
+            mock(DcCookChefTimeMapper.class),
+            orderMapper,
+            mock(DcCookReviewMapper.class),
+            settlementMapper,
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
+        );
+
+        DcCookChef chef = new DcCookChef();
+        chef.setChefId(10L);
+        chef.setUserId(1L);
+        chef.setAuditStatus("1");
+        chef.setChefStatus("0");
+        chef.setBaseSalary(new BigDecimal("3000.00"));
+        chef.setHealthCertExpireDate(Date.from(LocalDate.now().plusDays(60).atStartOfDay(ZoneId.systemDefault()).toInstant()));
+
+        DcCookOrder order = new DcCookOrder();
+        order.setOrderId(100L);
+        order.setChefId(10L);
+        order.setStatus("5");
+        order.setPayAmount(new BigDecimal("700.00"));
+        order.setPayTime(new Date());
+        order.setCompleteTime(new Date());
+
+        DcCookSettlement settlement = new DcCookSettlement();
+        settlement.setSettlementId(88L);
+        settlement.setChefId(10L);
+        settlement.setSettlementMonth(java.time.YearMonth.now().toString());
+        settlement.setBaseSalary(new BigDecimal("3000.00"));
+        settlement.setChefCommission(new BigDecimal("560.00"));
+        settlement.setViolationDeduction(new BigDecimal("200.00"));
+        settlement.setPayableAmount(new BigDecimal("3360.00"));
+
+        when(chefMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(chef);
+        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(order));
+        when(settlementMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(settlement);
+
+        DcCookChefWorkbenchVo workbench = service.queryWorkbench(1L);
+
+        assertEquals(new BigDecimal("3000.00"), workbench.getRevenueOverview().getMonthBaseSalary());
+        assertEquals(new BigDecimal("560.00"), workbench.getRevenueOverview().getMonthCommissionAmount());
+        assertEquals(new BigDecimal("200.00"), workbench.getRevenueOverview().getMonthDeduction());
+        assertEquals(new BigDecimal("3560.00"), workbench.getRevenueOverview().getMonthPayableAmount());
+    }
+
     private DcCookChefServiceImpl newService(DcCookChefMapper chefMapper) {
         return new DcCookChefServiceImpl(
             chefMapper,
@@ -155,7 +254,8 @@ public class DcCookChefWorkbenchTest {
             mock(DcCookOrderMapper.class),
             mock(DcCookReviewMapper.class),
             mock(DcCookSettlementMapper.class),
-            mock(IDcCookConfigService.class)
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
         );
     }
 

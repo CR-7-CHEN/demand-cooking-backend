@@ -16,5 +16,5 @@ public interface IDcCookReviewService {
 
     Boolean submit(DcCookReviewBo bo);
 
-    Boolean hide(Long reviewId);
+    Boolean toggleDisplayStatus(Long reviewId);
 }

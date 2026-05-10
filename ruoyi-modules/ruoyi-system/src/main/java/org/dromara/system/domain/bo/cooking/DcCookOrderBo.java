@@ -25,6 +25,8 @@ public class DcCookOrderBo extends BaseEntity {
 
     private Long chefId;
 
+    private String chefName;
+
     private Long addressId;
 
     private String contactName;

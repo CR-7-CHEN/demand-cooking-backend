@@ -174,6 +174,33 @@ public class DcCookOrderStatusServiceTest {
     }
 
     @Test
+    @DisplayName("chef can re-quote once after user objection")
+    public void quoteAllowsSingleRequoteAfterObjection() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(8L, DcCookOrderStatus.PRICE_OBJECTION);
+        order.setQuoteUpdateCount(1);
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+        when(orderMapper.updateById(any(DcCookOrder.class))).thenReturn(1);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+        bo.setQuoteAmount(new java.math.BigDecimal("128.00"));
+        bo.setQuoteRemark("updated after objection");
+
+        Boolean updated = assertDoesNotThrow(() -> service.quote(bo));
+
+        assertTrue(updated);
+        assertEquals(DcCookOrderStatus.WAITING_PAY, order.getStatus());
+        assertEquals(2, order.getQuoteUpdateCount());
+        assertEquals(new java.math.BigDecimal("128.00"), order.getQuoteAmount());
+        assertEquals("updated after objection", order.getQuoteRemark());
+        verify(orderMapper).updateById(order);
+        verify(messageMapper).insert(any(DcCookMessage.class));
+    }
+
+    @Test
     @DisplayName("user cancel rejects orders after actual service start")
     public void userCancelRejectsAfterActualServiceStart() {
         DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);

@@ -7,6 +7,8 @@ import org.dromara.system.domain.cooking.DcCookReview;
 import org.dromara.system.mapper.cooking.DcCookComplaintMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
 import org.dromara.system.mapper.cooking.DcCookReviewMapper;
+import org.dromara.system.mapper.SysUserMapper;
+import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.service.impl.cooking.DcCookChefRatingHelper;
 import org.dromara.system.service.impl.cooking.DcCookComplaintServiceImpl;
 import org.junit.jupiter.api.DisplayName;
@@ -36,11 +38,15 @@ public class DcCookComplaintServiceTest {
         DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
         DcCookReviewMapper reviewMapper = mock(DcCookReviewMapper.class);
         DcCookChefRatingHelper ratingHelper = mock(DcCookChefRatingHelper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
         DcCookComplaintServiceImpl service = new DcCookComplaintServiceImpl(
             complaintMapper,
             orderMapper,
             reviewMapper,
-            ratingHelper
+            ratingHelper,
+            userMapper,
+            chefMapper
         );
 
         DcCookComplaint complaint = new DcCookComplaint();

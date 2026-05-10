@@ -12,6 +12,7 @@ import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.utils.file.MimeTypeUtils;
 import org.dromara.system.domain.SysUser;
+import org.dromara.system.domain.bo.SysUserBo;
 import org.dromara.system.domain.bo.cooking.DcCookAppProfileBo;
 import org.dromara.system.domain.vo.SysOssVo;
 import org.dromara.system.domain.vo.SysUserVo;
@@ -47,9 +48,19 @@ public class DcCookAppProfileController {
     @PutMapping
     public R<SysUserVo> update(@Valid @RequestBody DcCookAppProfileBo bo) {
         Long userId = LoginHelper.getUserId();
+        String phonenumber = StringUtils.trim(bo.getPhonenumber());
+        if (StringUtils.isNotEmpty(phonenumber)) {
+            SysUserBo userBo = new SysUserBo();
+            userBo.setUserId(userId);
+            userBo.setPhonenumber(phonenumber);
+            if (!userService.checkPhoneUnique(userBo)) {
+                return R.fail("手机号码已存在");
+            }
+        }
         int rows = DataPermissionHelper.ignore(() -> userMapper.update(null,
             Wrappers.lambdaUpdate(SysUser.class)
                 .set(bo.getNickName() != null, SysUser::getNickName, bo.getNickName())
+                .set(bo.getPhonenumber() != null, SysUser::getPhonenumber, phonenumber)
                 .set(bo.getAvatar() != null, SysUser::getAvatar, bo.getAvatar())
                 .eq(SysUser::getUserId, userId)));
         if (rows <= 0) {

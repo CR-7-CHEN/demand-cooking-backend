@@ -20,7 +20,11 @@ public class DcCookComplaintBo extends BaseEntity {
 
     private Long userId;
 
+    private String userKeyword;
+
     private Long chefId;
+
+    private String chefName;
 
     private String complaintType;
 

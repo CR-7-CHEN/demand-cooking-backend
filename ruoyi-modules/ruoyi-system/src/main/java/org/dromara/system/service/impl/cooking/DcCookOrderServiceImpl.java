@@ -147,7 +147,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         }
         if (DcCookOrderStatus.WAITING_RESPONSE.equals(order.getStatus())) {
             order.setPayDeadline(addMinutes(new Date(), getIntConfig("cooking.pay.timeout.minutes", DEFAULT_PAY_MINUTES)));
-        } else if (order.getQuoteUpdateCount() != null && order.getQuoteUpdateCount() >= 1) {
+        } else if (order.getQuoteUpdateCount() != null && order.getQuoteUpdateCount() >= 2) {
             throw new ServiceException("quote can only be updated once after objection");
         }
         order.setStatus(DcCookOrderStatus.WAITING_PAY);
@@ -258,7 +258,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean confirm(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        assertStatus(order, DcCookOrderStatus.WAITING_CONFIRM);
+        if (!DcCookOrderStatus.WAITING_CONFIRM.equals(order.getStatus())) {
+            throw new ServiceException("当前订单还未进入待确认状态，不能确认完成");
+        }
         order.setStatus(DcCookOrderStatus.COMPLETED);
         order.setConfirmTime(new Date());
         order.setCompleteTime(new Date());
@@ -349,6 +351,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         lqw.like(StringUtils.isNotBlank(bo.getOrderNo()), DcCookOrder::getOrderNo, bo.getOrderNo());
         lqw.eq(bo.getUserId() != null, DcCookOrder::getUserId, bo.getUserId());
         lqw.eq(bo.getChefId() != null, DcCookOrder::getChefId, bo.getChefId());
+        lqw.apply(StringUtils.isNotBlank(bo.getChefName()),
+            "chef_id in (select chef_id from dc_cook_chef where chef_name like concat('%', {0}, '%'))",
+            bo.getChefName());
         if (StringUtils.isNotBlank(bo.getStatusGroup())) {
             if (groupedStatuses.isEmpty()) {
                 lqw.eq(DcCookOrder::getOrderId, -1L);
