@@ -259,7 +259,7 @@ public class DcCookChefController {
     private DcCookChefVo requireCurrentChef() {
         DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
         if (chef == null) {
-            throw new ServiceException("请先申请成为做饭人员", HttpStatus.FORBIDDEN);
+            throw new ServiceException("请先申请成为服务厨师", HttpStatus.FORBIDDEN);
         }
         return chef;
     }

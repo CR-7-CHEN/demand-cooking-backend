@@ -1,4 +1,4 @@
--- 同步做饭人员状态字段默认值与注释为数字口径。
+-- 同步服务厨师状态字段默认值与注释为数字口径。
 ALTER TABLE dc_cook_chef
     MODIFY COLUMN audit_status varchar(30) DEFAULT '0' COMMENT '审核状态（0待审核 1已通过 2已拒绝）';
 

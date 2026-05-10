@@ -1,4 +1,4 @@
--- 回填历史做饭人员手机号到用户表，保证后台用户管理可回显手机号。
+-- 回填历史服务厨师手机号到用户表，保证后台用户管理可回显手机号。
 UPDATE sys_user u
 JOIN dc_cook_chef c
     ON c.tenant_id COLLATE utf8mb4_general_ci = u.tenant_id COLLATE utf8mb4_general_ci

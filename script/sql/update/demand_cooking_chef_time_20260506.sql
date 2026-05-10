@@ -1,4 +1,4 @@
--- 做饭人员可预约时间表
+-- 服务厨师可预约时间表
 -- 用于补齐已部署库缺失的 dc_cook_chef_time 表。
 CREATE TABLE IF NOT EXISTS dc_cook_chef_time (
     time_id     bigint(20)   NOT NULL COMMENT '可预约时间ID',

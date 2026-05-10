@@ -678,7 +678,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         DcCookChef chef = requireChefByUserId(userId);
         if (!AUDIT_APPROVED.equals(chef.getAuditStatus())
             || (!STATUS_NORMAL.equals(chef.getChefStatus()) && !STATUS_PAUSED.equals(chef.getChefStatus()))) {
-            throw new ServiceException("做饭人员审核通过后可访问该功能", HttpStatus.FORBIDDEN);
+            throw new ServiceException("服务厨师审核通过后可访问该功能", HttpStatus.FORBIDDEN);
         }
         return chef;
     }
@@ -700,7 +700,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             .orderByDesc(DcCookChef::getCreateTime)
             .last("limit 1"), false);
         if (chef == null) {
-            throw new ServiceException("请先申请成为做饭人员", HttpStatus.FORBIDDEN);
+            throw new ServiceException("请先申请成为服务厨师", HttpStatus.FORBIDDEN);
         }
         return chef;
     }
