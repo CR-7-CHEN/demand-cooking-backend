@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_support_ticket (
     order_id     bigint(20)    DEFAULT NULL COMMENT '关联订单ID',
     question     varchar(1000) NOT NULL COMMENT '用户问题',
     reply        varchar(1000) DEFAULT NULL COMMENT '处理回复',
-    status       varchar(20)   DEFAULT 'PENDING' COMMENT '状态（PENDING待处理REPLIED已回复CLOSED已关闭）',
+    status       varchar(20)   DEFAULT 'PENDING' COMMENT '状态（PENDING待处理 REPLIED已回复 CLOSED已关闭）',
     handler_id   bigint(20)    DEFAULT NULL COMMENT '处理人ID',
     handle_time  datetime      DEFAULT NULL COMMENT '处理时间',
     close_time   datetime      DEFAULT NULL COMMENT '关闭时间',

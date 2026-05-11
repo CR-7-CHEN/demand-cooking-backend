@@ -361,6 +361,17 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
             } else {
                 lqw.in(DcCookOrder::getStatus, groupedStatuses);
             }
+            String trimmedGroup = bo.getStatusGroup().trim();
+            if (DcCookOrderStatus.USER_TAB_PAID.equals(trimmedGroup)) {
+                lqw.eq(DcCookOrder::getServiceStartedFlag, "0");
+            } else if (DcCookOrderStatus.USER_TAB_SERVING.equals(trimmedGroup)) {
+                lqw.and(w -> w
+                    .ne(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+                    .or(inner -> inner
+                        .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+                        .eq(DcCookOrder::getServiceStartedFlag, "1"))
+                );
+            }
         } else {
             lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DcCookOrder::getStatus, bo.getStatus());
         }

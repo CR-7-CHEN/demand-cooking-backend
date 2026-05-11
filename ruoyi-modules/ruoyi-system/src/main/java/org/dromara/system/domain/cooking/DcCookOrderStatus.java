@@ -25,6 +25,7 @@ public final class DcCookOrderStatus {
 
     public static final String USER_TAB_RESERVED = "reserved";
     public static final String USER_TAB_PAYMENT = "payment";
+    public static final String USER_TAB_PAID = "paid";
     public static final String USER_TAB_SERVING = "serving";
     public static final String USER_TAB_COMPLETED = "completed";
     public static final String USER_TAB_CLOSED = "closed";
@@ -48,6 +49,10 @@ public final class DcCookOrderStatus {
 
     public static final List<String> USER_TAB_PAYMENT_STATUSES = Arrays.asList(
         WAITING_PAY, PRICE_OBJECTION
+    );
+
+    public static final List<String> USER_TAB_PAID_STATUSES = Arrays.asList(
+        WAITING_SERVICE
     );
 
     public static final List<String> USER_TAB_SERVING_STATUSES = Arrays.asList(
@@ -76,6 +81,9 @@ public final class DcCookOrderStatus {
         }
         if (USER_TAB_PAYMENT.equals(tab)) {
             return USER_TAB_PAYMENT_STATUSES;
+        }
+        if (USER_TAB_PAID.equals(tab)) {
+            return USER_TAB_PAID_STATUSES;
         }
         if (USER_TAB_SERVING.equals(tab)) {
             return USER_TAB_SERVING_STATUSES;
