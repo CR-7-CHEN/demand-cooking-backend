@@ -343,6 +343,8 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (!time.getStartTime().before(time.getEndTime())) {
             throw new ServiceException("startTime must be before endTime");
         }
+        DcCookChefTimeServiceImpl.validateHalfHourBoundary(time.getStartTime(), time.getEndTime());
+        DcCookChefTimeServiceImpl.validateMinimumDuration(time.getStartTime(), time.getEndTime());
         if (!DcCookChefTimeServiceImpl.isValidMealRemark(time.getRemark())) {
             throw new ServiceException("remark must be one of 早餐/午餐/晚餐");
         }
@@ -357,14 +359,21 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             && !AUDIT_PENDING.equals(bo.getAuditStatus())) {
             throw new ServiceException("invalid auditStatus");
         }
-        DcCookChef update = new DcCookChef();
-        update.setChefId(bo.getChefId());
-        update.setAuditStatus(bo.getAuditStatus());
-        update.setAuditReason(bo.getAuditReason());
-        if (AUDIT_APPROVED.equals(bo.getAuditStatus()) && StringUtils.isBlank(bo.getChefStatus())) {
-            update.setChefStatus(STATUS_NORMAL);
+        if (AUDIT_REJECTED.equals(bo.getAuditStatus()) && StringUtils.isBlank(bo.getAuditReason())) {
+            throw new ServiceException("auditReason is required");
         }
-        return baseMapper.updateById(update) > 0;
+        var update = Wrappers.lambdaUpdate(DcCookChef.class)
+            .eq(DcCookChef::getChefId, bo.getChefId())
+            .set(DcCookChef::getAuditStatus, bo.getAuditStatus());
+        if (AUDIT_REJECTED.equals(bo.getAuditStatus())) {
+            update.set(DcCookChef::getAuditReason, bo.getAuditReason().trim());
+        } else {
+            update.set(DcCookChef::getAuditReason, null);
+        }
+        if (AUDIT_APPROVED.equals(bo.getAuditStatus()) && StringUtils.isBlank(bo.getChefStatus())) {
+            update.set(DcCookChef::getChefStatus, STATUS_NORMAL);
+        }
+        return baseMapper.update(null, update) > 0;
     }
 
     @Override
@@ -746,7 +755,6 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         }
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm");
         return times.stream()
-            .limit(3)
             .map(item -> format.format(item.getStartTime()) + " - " + format.format(item.getEndTime()))
             .collect(Collectors.joining("; "));
     }

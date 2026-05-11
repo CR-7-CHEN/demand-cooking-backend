@@ -229,7 +229,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         settlement.setViolationCount(violationCount);
         settlement.setViolationDeduction(violationDeduction);
         settlement.setFinalCommission(finalCommission);
-        settlement.setPayableAmount(baseSalary.add(finalCommission));
+        settlement.setPayableAmount(baseSalary.add(chefCommission).subtract(violationDeduction));
         settlement.setGeneratedTime(new Date());
         settlement.setManualFlag(defaultManualFlag(settlement.getManualFlag()));
     }

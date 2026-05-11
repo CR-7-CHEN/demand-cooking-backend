@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
+import org.dromara.system.domain.bo.cooking.DcCookChefBo;
+import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
@@ -17,6 +19,8 @@ import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.mapper.cooking.DcCookMessageMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
 import org.dromara.system.service.cooking.IDcCookConfigService;
+import org.dromara.system.service.impl.cooking.DcCookChefServiceImpl;
+import org.dromara.system.service.impl.cooking.DcCookChefTimeServiceImpl;
 import org.dromara.system.service.impl.cooking.DcCookOrderServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -34,6 +38,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @DisplayName("Cooking reservation rules")
@@ -77,6 +82,28 @@ public class DcCookReservationRulesTest {
         verify(orderMapper).insert(captor.capture());
         long lockMillis = captor.getValue().getServiceEndTime().getTime() - bo.getServiceStartTime().getTime();
         assertEquals(3 * 60 * 60_000L, lockMillis);
+    }
+
+    @Test
+    @DisplayName("requires chef availability to cover the full fixed three hour service window")
+    void submitRequiresAvailableWindowToCoverThreeHours() {
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, chefMapper, chefTimeMapper);
+        when(chefMapper.selectById(20L)).thenReturn(approvedChef(20L));
+        when(chefTimeMapper.exists(any(Wrapper.class))).thenReturn(false);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.submit(orderBo()));
+
+        assertEquals("reservation time is not available for this chef", ex.getMessage());
+        verify(orderMapper, never()).insert(any(DcCookOrder.class));
+        ArgumentCaptor<Wrapper> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(chefTimeMapper).exists(wrapperCaptor.capture());
+        @SuppressWarnings("unchecked")
+        LambdaQueryWrapper<?> wrapper = (LambdaQueryWrapper<?>) wrapperCaptor.getValue();
+        assertTrue(wrapper.getSqlSegment().contains("startTime"));
+        assertTrue(wrapper.getSqlSegment().contains("endTime"));
     }
 
     @Test
@@ -129,6 +156,48 @@ public class DcCookReservationRulesTest {
         assertTrue(wrapper.getSqlSegment().contains("status"));
     }
 
+    @Test
+    @DisplayName("rejects chef profile save when any available time is shorter than three hours")
+    void chefProfileSaveRejectsAvailableTimeShorterThanThreeHours() {
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        DcCookChefServiceImpl service = new DcCookChefServiceImpl(
+            chefMapper,
+            chefTimeMapper,
+            mock(DcCookOrderMapper.class),
+            mock(org.dromara.system.mapper.cooking.DcCookReviewMapper.class),
+            mock(org.dromara.system.mapper.cooking.DcCookSettlementMapper.class),
+            mock(IDcCookConfigService.class),
+            userMapper
+        );
+        when(chefMapper.insert(any(DcCookChef.class))).thenAnswer(invocation -> {
+            DcCookChef chef = invocation.getArgument(0);
+            chef.setChefId(88L);
+            return 1;
+        });
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.insertByBo(chefBoWithShortAvailableTime()));
+
+        assertEquals("availableTime must be at least 3 hours", ex.getMessage());
+        verify(userMapper).exists(any(Wrapper.class));
+        verify(chefMapper).insert(any(DcCookChef.class));
+    }
+
+    @Test
+    @DisplayName("rejects single chef available time updates shorter than three hours")
+    void chefTimeUpdateRejectsWindowShorterThanThreeHours() {
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookChefTimeServiceImpl service = new DcCookChefTimeServiceImpl(chefTimeMapper);
+        DcCookChefTimeBo bo = shortChefTimeBo();
+        bo.setTimeId(66L);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.updateByBo(bo));
+
+        assertEquals("availableTime must be at least 3 hours", ex.getMessage());
+        verifyNoInteractions(chefTimeMapper);
+    }
+
     private DcCookOrderServiceImpl newService(DcCookOrderMapper orderMapper, DcCookChefMapper chefMapper,
                                               DcCookChefTimeMapper chefTimeMapper) {
         IDcCookConfigService configService = mock(IDcCookConfigService.class);
@@ -163,6 +232,24 @@ public class DcCookReservationRulesTest {
         chef.setChefStatus("0");
         chef.setHealthCertExpireDate(hoursFromNow(48));
         return chef;
+    }
+
+    private DcCookChefBo chefBoWithShortAvailableTime() {
+        DcCookChefBo bo = new DcCookChefBo();
+        bo.setUserId(10L);
+        bo.setChefName("Chef Test");
+        bo.setMobile("13800138000");
+        bo.setAvailableTimes(List.of(shortChefTimeBo()));
+        return bo;
+    }
+
+    private DcCookChefTimeBo shortChefTimeBo() {
+        DcCookChefTimeBo bo = new DcCookChefTimeBo();
+        bo.setChefId(88L);
+        bo.setRemark("早餐");
+        bo.setStartTime(hoursFromNow(24));
+        bo.setEndTime(new Date(bo.getStartTime().getTime() + (2 * 60 * 60_000L) + (30 * 60_000L)));
+        return bo;
     }
 
     private Date hoursFromNow(int hours) {

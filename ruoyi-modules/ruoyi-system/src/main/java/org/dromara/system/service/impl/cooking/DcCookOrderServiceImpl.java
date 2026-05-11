@@ -97,6 +97,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         }
         Date serviceStartTime = bo.getServiceStartTime();
         Date serviceEndTime = addHours(serviceStartTime, getIntConfig("cooking.service.duration.hours", DEFAULT_SERVICE_HOURS));
+        DcCookChefTimeServiceImpl.validateHalfHourBoundary(serviceStartTime, serviceEndTime);
         assertReservationTimeAvailable(chef.getChefId(), serviceStartTime, serviceEndTime);
         DcCookOrder order = buildSubmitOrder(bo);
         order.setOrderNo(generateOrderNo());

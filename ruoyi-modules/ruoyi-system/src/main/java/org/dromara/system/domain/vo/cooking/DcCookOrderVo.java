@@ -108,4 +108,12 @@ public class DcCookOrderVo implements Serializable {
     private Date createTime;
 
     private Date updateTime;
+
+    public Long getId() {
+        return orderId;
+    }
+
+    public void setId(Long id) {
+        this.orderId = id;
+    }
 }

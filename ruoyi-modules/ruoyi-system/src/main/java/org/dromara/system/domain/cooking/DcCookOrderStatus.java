@@ -27,6 +27,7 @@ public final class DcCookOrderStatus {
     public static final String USER_TAB_PAYMENT = "payment";
     public static final String USER_TAB_SERVING = "serving";
     public static final String USER_TAB_COMPLETED = "completed";
+    public static final String USER_TAB_CLOSED = "closed";
 
     public static final List<String> UNPAID_CANCELABLE = Arrays.asList(
         WAITING_RESPONSE, WAITING_PAY, PRICE_OBJECTION
@@ -57,6 +58,11 @@ public final class DcCookOrderStatus {
         COMPLETED
     );
 
+    public static final List<String> USER_TAB_CLOSED_STATUSES = Arrays.asList(
+        REJECTED_CLOSED, RESPONSE_TIMEOUT_CLOSED, OBJECTION_TIMEOUT_CLOSED,
+        PAY_TIMEOUT_CLOSED, CANCELED, REFUNDING, REFUNDED, REFUND_FAILED
+    );
+
     public static final String CANCEL_USER_UNPAID = "USER_UNPAID";
     public static final String CANCEL_USER_PAID = "USER_PAID";
     public static final String CANCEL_CHEF = "CHEF";
@@ -76,6 +82,9 @@ public final class DcCookOrderStatus {
         }
         if (USER_TAB_COMPLETED.equals(tab)) {
             return USER_TAB_COMPLETED_STATUSES;
+        }
+        if (USER_TAB_CLOSED.equals(tab)) {
+            return USER_TAB_CLOSED_STATUSES;
         }
         return List.of();
     }

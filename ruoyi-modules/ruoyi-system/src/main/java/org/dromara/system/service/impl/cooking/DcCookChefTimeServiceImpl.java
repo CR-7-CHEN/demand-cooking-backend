@@ -13,6 +13,8 @@ import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
 import org.dromara.system.service.cooking.IDcCookChefTimeService;
 import org.springframework.stereotype.Service;
 
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -20,6 +22,8 @@ import java.util.List;
 public class DcCookChefTimeServiceImpl implements IDcCookChefTimeService {
 
     public static final String STATUS_ENABLED = "0";
+    private static final long MIN_AVAILABLE_DURATION_MILLIS = 3 * 60 * 60_000L;
+    private static final int HALF_HOUR_MINUTE_STEP = 30;
     public static final List<String> MEAL_REMARK_OPTIONS = List.of("早餐", "午餐", "晚餐");
 
     private final DcCookChefTimeMapper baseMapper;
@@ -87,12 +91,41 @@ public class DcCookChefTimeServiceImpl implements IDcCookChefTimeService {
         if (!bo.getStartTime().before(bo.getEndTime())) {
             throw new ServiceException("startTime must be before endTime");
         }
+        validateHalfHourBoundary(bo.getStartTime(), bo.getEndTime());
+        validateMinimumDuration(bo.getStartTime(), bo.getEndTime());
         if (!isValidMealRemark(bo.getRemark())) {
             throw new ServiceException("remark must be one of 早餐/午餐/晚餐");
         }
     }
 
+    static void validateHalfHourBoundary(Date startTime, Date endTime) {
+        if (startTime == null || endTime == null) {
+            return;
+        }
+        if (!isHalfHourBoundary(startTime) || !isHalfHourBoundary(endTime)) {
+            throw new ServiceException("time must align to 30-minute slots");
+        }
+    }
+
+    static void validateMinimumDuration(Date startTime, Date endTime) {
+        if (startTime == null || endTime == null) {
+            return;
+        }
+        if (endTime.getTime() - startTime.getTime() < MIN_AVAILABLE_DURATION_MILLIS) {
+            throw new ServiceException("availableTime must be at least 3 hours");
+        }
+    }
+
     static boolean isValidMealRemark(String remark) {
         return MEAL_REMARK_OPTIONS.contains(StringUtils.trim(remark));
+    }
+
+    private static boolean isHalfHourBoundary(Date value) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(value);
+        int minute = calendar.get(Calendar.MINUTE);
+        return (minute == 0 || minute == HALF_HOUR_MINUTE_STEP)
+            && calendar.get(Calendar.SECOND) == 0
+            && calendar.get(Calendar.MILLISECOND) == 0;
     }
 }

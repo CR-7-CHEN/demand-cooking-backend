@@ -147,7 +147,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
     private List<DcCookDashboardOverviewVo.PendingItem> buildPendingItems() {
         List<DcCookDashboardOverviewVo.PendingItem> items = new ArrayList<>(3);
         items.add(pendingItem("chefAudit", "厨师审核待处理", "PENDING", countPendingChefAudits(), "danger"));
-        items.add(pendingItem("complaintReply", "用户投诉待回复", DcCookComplaintStatus.PENDING, countPendingComplaints(), "warning"));
+        items.add(pendingItem("complaintReply", "用户投诉待处理", DcCookComplaintStatus.PENDING, countPendingComplaints(), "warning"));
         items.add(pendingItem("chefService", "厨师待服务", DcCookOrderStatus.WAITING_SERVICE, countWaitingServiceOrders(), "success"));
         return items;
     }
