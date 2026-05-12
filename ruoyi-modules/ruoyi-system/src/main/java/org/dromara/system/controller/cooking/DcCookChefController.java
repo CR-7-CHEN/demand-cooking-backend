@@ -46,6 +46,7 @@ import java.util.UUID;
 public class DcCookChefController {
 
     private static final String CHEF_IMAGE_PATH = "/cooking/chef/image/";
+    private static final String AUDIT_PENDING = "0";
     private static final Path CHEF_UPLOAD_DIR = Path.of(System.getProperty("user.dir"), "uploads", "cooking", "chef");
 
     private final IDcCookChefService chefService;
@@ -117,6 +118,9 @@ public class DcCookChefController {
         Long userId = LoginHelper.getUserId();
         DcCookChefVo mine = chefService.queryByUserId(userId);
         if (mine != null) {
+            if (AUDIT_PENDING.equals(mine.getAuditStatus())) {
+                throw new ServiceException("当前入驻申请正在审核中，请勿重复提交");
+            }
             bo.setChefId(mine.getChefId());
         }
         bo.setUserId(userId);

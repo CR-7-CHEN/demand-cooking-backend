@@ -260,6 +260,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean insertByBo(DcCookChefBo bo) {
+        assertNoPendingApply(bo.getUserId());
         if (!checkMobileUnique(bo)) {
             throw new ServiceException("Chef mobile already exists");
         }
@@ -289,6 +290,19 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             syncUserPhone(bo);
         }
         return inserted;
+    }
+
+    private void assertNoPendingApply(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        DcCookChef existing = baseMapper.selectOne(Wrappers.lambdaQuery(DcCookChef.class)
+            .eq(DcCookChef::getUserId, userId)
+            .orderByDesc(DcCookChef::getCreateTime)
+            .last("limit 1"), false);
+        if (existing != null && AUDIT_PENDING.equals(existing.getAuditStatus())) {
+            throw new ServiceException("当前入驻申请正在审核中，请勿重复提交");
+        }
     }
 
     @Override

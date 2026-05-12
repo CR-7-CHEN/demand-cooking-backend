@@ -88,13 +88,79 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
         lqw.eq(StringUtils.isNotBlank(bo.getChannel()), DcCookMessage::getChannel, bo.getChannel());
         lqw.eq(StringUtils.isNotBlank(bo.getReceiverType()), DcCookMessage::getReceiverType, bo.getReceiverType());
         lqw.eq(bo.getReceiverId() != null, DcCookMessage::getReceiverId, bo.getReceiverId());
+        applyReceiverKeywordFilter(lqw, bo.getReceiverKeyword());
         lqw.eq(bo.getRelatedOrderId() != null, DcCookMessage::getRelatedOrderId, bo.getRelatedOrderId());
         lqw.eq(StringUtils.isNotBlank(bo.getRelatedOrderNo()), DcCookMessage::getRelatedOrderNo, bo.getRelatedOrderNo());
         lqw.eq(StringUtils.isNotBlank(bo.getSendStatus()), DcCookMessage::getSendStatus, bo.getSendStatus());
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
-            DcCookMessage::getCreateTime, params.get("beginTime"), params.get("endTime"));
+            DcCookMessage::getSendTime, params.get("beginTime"), params.get("endTime"));
         lqw.orderByDesc(DcCookMessage::getCreateTime);
         return lqw;
+    }
+
+    private void applyReceiverKeywordFilter(LambdaQueryWrapper<DcCookMessage> lqw, String receiverKeyword) {
+        if (StringUtils.isBlank(receiverKeyword)) {
+            return;
+        }
+        String keyword = receiverKeyword.trim();
+        Long numericReceiverId = parseLong(keyword);
+        List<Long> userIds = resolveUserIds(keyword);
+        List<Long> chefIds = resolveChefIds(keyword);
+        if (numericReceiverId == null && userIds.isEmpty() && chefIds.isEmpty()) {
+            lqw.eq(DcCookMessage::getMessageId, -1L);
+            return;
+        }
+        lqw.and(wrapper -> {
+            if (numericReceiverId != null) {
+                wrapper.eq(DcCookMessage::getReceiverId, numericReceiverId);
+            }
+            if (!userIds.isEmpty()) {
+                wrapper.or(userWrapper -> userWrapper
+                    .in(DcCookMessage::getReceiverType, List.of("USER", "ADMIN"))
+                    .in(DcCookMessage::getReceiverId, userIds));
+            }
+            if (!chefIds.isEmpty()) {
+                wrapper.or(chefWrapper -> chefWrapper
+                    .eq(DcCookMessage::getReceiverType, "CHEF")
+                    .in(DcCookMessage::getReceiverId, chefIds));
+            }
+        });
+    }
+
+    private List<Long> resolveUserIds(String keyword) {
+        Long userId = parseLong(keyword);
+        LambdaQueryWrapper<SysUser> lqw = Wrappers.lambdaQuery(SysUser.class)
+            .and(wrapper -> wrapper.like(SysUser::getUserName, keyword).or().like(SysUser::getNickName, keyword));
+        if (userId != null) {
+            lqw.or().eq(SysUser::getUserId, userId);
+        }
+        return userMapper.selectList(lqw).stream()
+            .map(SysUser::getUserId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+    }
+
+    private List<Long> resolveChefIds(String keyword) {
+        Long chefId = parseLong(keyword);
+        LambdaQueryWrapper<DcCookChef> lqw = Wrappers.lambdaQuery(DcCookChef.class)
+            .like(DcCookChef::getChefName, keyword);
+        if (chefId != null) {
+            lqw.or().eq(DcCookChef::getChefId, chefId);
+        }
+        return chefMapper.selectList(lqw).stream()
+            .map(DcCookChef::getChefId)
+            .filter(Objects::nonNull)
+            .distinct()
+            .toList();
+    }
+
+    private Long parseLong(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private void hydrateReceiverNames(List<DcCookMessageVo> records) {

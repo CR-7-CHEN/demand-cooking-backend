@@ -27,6 +27,8 @@ public class DcCookMessageBo extends BaseEntity {
 
     private Long receiverId;
 
+    private String receiverKeyword;
+
     private String receiverMobileMask;
 
     private String receiverOpenidMask;
