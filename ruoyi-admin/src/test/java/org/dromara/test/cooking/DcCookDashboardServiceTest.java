@@ -25,6 +25,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +53,7 @@ public class DcCookDashboardServiceTest {
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(), List.of());
         when(orderMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(emptyPage());
         when(chefMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(chefMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(emptyChefPage());
         when(complaintMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(userMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
 
@@ -70,8 +72,47 @@ public class DcCookDashboardServiceTest {
         }
     }
 
+    @Test
+    @DisplayName("overview requests ten recent orders ordered by create time desc")
+    public void overviewRequestsTenRecentOrders() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookComplaintMapper complaintMapper = mock(DcCookComplaintMapper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        DcCookDashboardServiceImpl service = new DcCookDashboardServiceImpl(orderMapper, chefMapper, complaintMapper, userMapper);
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookChef.class);
+        initTableInfo(DcCookComplaint.class);
+        initTableInfo(SysUser.class);
+
+        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(), List.of());
+        when(orderMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(emptyPage());
+        when(chefMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(chefMapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(emptyChefPage());
+        when(complaintMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(userMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+
+        service.overview("week");
+
+        org.mockito.ArgumentCaptor<Page<DcCookOrder>> pageCaptor = org.mockito.ArgumentCaptor.forClass(Page.class);
+        org.mockito.ArgumentCaptor<Wrapper<DcCookOrder>> wrapperCaptor = org.mockito.ArgumentCaptor.forClass(Wrapper.class);
+        verify(orderMapper).selectPage(pageCaptor.capture(), wrapperCaptor.capture());
+        assertEquals(10, pageCaptor.getValue().getSize());
+        org.junit.jupiter.api.Assertions.assertTrue(
+            wrapperCaptor.getValue().getExpression().getNormal().stream()
+                .anyMatch(segment -> segment.getSqlSegment().contains("create_time") && segment.getSqlSegment().contains("DESC"))
+        );
+    }
+
     private Page<DcCookOrder> emptyPage() {
-        Page<DcCookOrder> page = new Page<>(1, 4);
+        Page<DcCookOrder> page = new Page<>(1, 10);
+        page.setRecords(List.of());
+        return page;
+    }
+
+    private Page<DcCookChef> emptyChefPage() {
+        Page<DcCookChef> page = new Page<>(1, 5);
         page.setRecords(List.of());
         return page;
     }

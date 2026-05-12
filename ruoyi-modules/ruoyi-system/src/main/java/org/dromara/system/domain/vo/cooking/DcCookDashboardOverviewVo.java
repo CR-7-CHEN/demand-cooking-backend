@@ -37,6 +37,8 @@ public class DcCookDashboardOverviewVo implements Serializable {
 
     private List<RecentOrderItem> recentOrders;
 
+    private List<TopChefItem> topRatedChefs;
+
     @Data
     public static class TrendItem implements Serializable {
 
@@ -80,5 +82,22 @@ public class DcCookDashboardOverviewVo implements Serializable {
         private String statusLabel;
 
         private Date createTime;
+    }
+
+    @Data
+    public static class TopChefItem implements Serializable {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private Long chefId;
+
+        private String chefName;
+
+        private BigDecimal rating;
+
+        private Long completedOrders;
+
+        private String avatarUrl;
     }
 }

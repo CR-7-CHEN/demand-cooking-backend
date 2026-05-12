@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -187,6 +188,61 @@ public class DcCookChefWorkbenchTest {
 
         assertEquals(6L, workbench.getOrderReminderCount());
         assertEquals(12L, workbench.getOrderTotalCount());
+    }
+
+    @Test
+    @DisplayName("today service alert only counts today's waiting service orders")
+    void todayServiceAlertOnlyCountsTodayWaitingServiceOrders() {
+        initTableInfo(DcCookChef.class);
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookSettlement.class);
+
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookSettlementMapper settlementMapper = mock(DcCookSettlementMapper.class);
+        DcCookChefServiceImpl service = new DcCookChefServiceImpl(
+            chefMapper,
+            mock(DcCookChefTimeMapper.class),
+            orderMapper,
+            mock(DcCookReviewMapper.class),
+            settlementMapper,
+            mock(IDcCookConfigService.class),
+            mock(SysUserMapper.class)
+        );
+
+        DcCookChef chef = new DcCookChef();
+        chef.setChefId(10L);
+        chef.setUserId(1L);
+        chef.setAuditStatus("1");
+        chef.setChefStatus("0");
+        chef.setHealthCertExpireDate(Date.from(LocalDate.now().plusDays(60).atStartOfDay(ZoneId.systemDefault()).toInstant()));
+
+        when(chefMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(chef);
+        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(orderMapper.selectCount(argThat(wrapper -> {
+            String sqlSegment = wrapper == null ? "" : wrapper.getSqlSegment();
+            return sqlSegment != null
+                && sqlSegment.contains("serviceStartTime");
+        }))).thenReturn(1L);
+        when(orderMapper.selectCount(argThat(wrapper -> {
+            if (wrapper == null) {
+                return false;
+            }
+            String sqlSegment = wrapper.getSqlSegment();
+            return sqlSegment != null
+                && !sqlSegment.contains("serviceStartTime")
+                && wrapper.getParamNameValuePairs().containsValue("WAITING_SERVICE");
+        }))).thenReturn(2L);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(settlementMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(null);
+
+        DcCookChefWorkbenchVo workbench = service.queryWorkbench(1L);
+        DcCookChefWorkbenchVo.AlertItem alert = workbench.getAlerts().stream()
+            .filter(item -> "today_service".equals(item.getKey()))
+            .findFirst()
+            .orElseThrow();
+
+        assertEquals(1L, alert.getCount());
     }
 
     @Test

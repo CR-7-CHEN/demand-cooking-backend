@@ -71,6 +71,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
         vo.setRevenueTrend(buildRevenueTrend(today));
         vo.setPendingItems(buildPendingItems());
         vo.setRecentOrders(buildRecentOrders());
+        vo.setTopRatedChefs(buildTopRatedChefs());
         return vo;
     }
 
@@ -178,7 +179,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
     }
 
     private List<DcCookDashboardOverviewVo.RecentOrderItem> buildRecentOrders() {
-        Page<DcCookOrder> page = orderMapper.selectPage(new Page<>(1, 4), Wrappers.lambdaQuery(DcCookOrder.class)
+        Page<DcCookOrder> page = orderMapper.selectPage(new Page<>(1, 10), Wrappers.lambdaQuery(DcCookOrder.class)
             .select(DcCookOrder::getOrderNo, DcCookOrder::getStatus, DcCookOrder::getCreateTime)
             .orderByDesc(DcCookOrder::getCreateTime));
         List<DcCookDashboardOverviewVo.RecentOrderItem> recentOrders = new ArrayList<>();
@@ -191,6 +192,30 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
             recentOrders.add(item);
         }
         return recentOrders;
+    }
+
+    private List<DcCookDashboardOverviewVo.TopChefItem> buildTopRatedChefs() {
+        Page<DcCookChef> page = chefMapper.selectPage(new Page<>(1, 5), Wrappers.lambdaQuery(DcCookChef.class)
+            .select(DcCookChef::getChefId, DcCookChef::getChefName, DcCookChef::getRating,
+                DcCookChef::getCompletedOrders, DcCookChef::getAvatarUrl)
+            .and(wrapper -> wrapper
+                .eq(DcCookChef::getChefStatus, "APPROVED")
+                .or(inner -> inner
+                    .eq(DcCookChef::getAuditStatus, AUDIT_APPROVED)
+                    .eq(DcCookChef::getChefStatus, CHEF_STATUS_NORMAL)))
+            .orderByDesc(DcCookChef::getRating)
+            .orderByDesc(DcCookChef::getCompletedOrders));
+        List<DcCookDashboardOverviewVo.TopChefItem> result = new ArrayList<>(5);
+        for (DcCookChef chef : page.getRecords()) {
+            DcCookDashboardOverviewVo.TopChefItem item = new DcCookDashboardOverviewVo.TopChefItem();
+            item.setChefId(chef.getChefId());
+            item.setChefName(chef.getChefName());
+            item.setRating(chef.getRating());
+            item.setCompletedOrders(chef.getCompletedOrders());
+            item.setAvatarUrl(chef.getAvatarUrl());
+            result.add(item);
+        }
+        return result;
     }
 
     private String statusLabel(String status) {
