@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -30,8 +31,37 @@ import static org.mockito.Mockito.mock;
 public class DcCookChefAppListFilterTest {
 
     @Test
-    @DisplayName("app list only includes chefs with user confirmed completed services")
-    void buildAppWrapperRequiresCompletedOrders() throws Exception {
+    @DisplayName("app list includes eligible chefs even when they have no completed orders")
+    void buildAppWrapperDoesNotRequireCompletedOrders() throws Exception {
+        LambdaQueryWrapper<DcCookChef> wrapper = buildWrapper(new DcCookChefBo());
+        Map<String, Object> values = wrapper.getParamNameValuePairs();
+        String sqlSegment = wrapper.getSqlSegment();
+
+        assertFalse(values.containsValue(DcCookOrderStatus.COMPLETED));
+        assertFalse(values.containsValue(DcCookOrderStatus.LEGACY_COMPLETED));
+        assertFalse(sqlSegment.contains("dc_cook_order"));
+        assertTrue(sqlSegment.contains("audit_status"));
+        assertTrue(sqlSegment.contains("chef_status"));
+        assertTrue(sqlSegment.contains("health_cert_expire_date"));
+        assertTrue(sqlSegment.contains("completed_orders"));
+    }
+
+    @Test
+    @DisplayName("app list keeps meal period filtering")
+    void buildAppWrapperKeepsMealPeriodFilter() throws Exception {
+        DcCookChefBo bo = new DcCookChefBo();
+        bo.setMealPeriod("lunch");
+
+        LambdaQueryWrapper<DcCookChef> wrapper = buildWrapper(bo);
+        Map<String, Object> values = wrapper.getParamNameValuePairs();
+        String sqlSegment = wrapper.getSqlSegment();
+
+        assertTrue(sqlSegment.contains("dc_cook_chef_time"));
+        assertTrue(values.containsValue("午餐"));
+        assertTrue(values.containsValue("午饭"));
+    }
+
+    private LambdaQueryWrapper<DcCookChef> buildWrapper(DcCookChefBo bo) throws Exception {
         initTableInfo(DcCookChef.class);
         DcCookChefServiceImpl service = new DcCookChefServiceImpl(
             mock(DcCookChefMapper.class),
@@ -42,13 +72,7 @@ public class DcCookChefAppListFilterTest {
             mock(IDcCookConfigService.class),
             mock(SysUserMapper.class)
         );
-
-        LambdaQueryWrapper<DcCookChef> wrapper = invokeBuildAppWrapper(service, new DcCookChefBo());
-        Map<String, Object> values = wrapper.getParamNameValuePairs();
-
-        assertTrue(values.containsValue(DcCookOrderStatus.COMPLETED));
-        assertTrue(wrapper.getSqlSegment().contains("dc_cook_order"));
-        assertTrue(wrapper.getSqlSegment().contains("status"));
+        return invokeBuildAppWrapper(service, bo);
     }
 
     @SuppressWarnings("unchecked")

@@ -97,6 +97,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         if (chef == null) {
             throw new ServiceException("chef not found");
         }
+        if (Objects.equals(bo.getUserId(), chef.getUserId())) {
+            throw new ServiceException("不能预约自己提供的服务");
+        }
         assertChefCanTakeOrder(chef);
         if (bo.getServiceStartTime() == null) {
             throw new ServiceException("serviceStartTime is required");
@@ -205,9 +208,11 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean paySuccess(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_PAY)
-            && !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.PRICE_OBJECTION)) {
-            throw new ServiceException("order cannot be paid now");
+        if (DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.PRICE_OBJECTION)) {
+            throw new ServiceException("当前订单报价异议处理中，请等待厨师重新报价后再支付");
+        }
+        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_PAY)) {
+            throw new ServiceException("当前订单状态不可支付");
         }
         if (order.getPayDeadline() != null && order.getPayDeadline().before(new Date())) {
             order.setStatus(DcCookOrderStatus.PAY_TIMEOUT_CLOSED);
@@ -506,9 +511,11 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         if (order.getAddressId() == null) {
             return;
         }
-        DcCookAddress address = addressMapper.selectById(order.getAddressId());
+        DcCookAddress address = addressMapper.selectOne(Wrappers.lambdaQuery(DcCookAddress.class)
+            .eq(DcCookAddress::getAddressId, order.getAddressId())
+            .eq(DcCookAddress::getUserId, order.getUserId()));
         if (address == null) {
-            return;
+            throw new ServiceException("无权使用该地址");
         }
         order.setContactName(defaultIfBlank(order.getContactName(), address.getContactName()));
         order.setContactPhone(defaultIfBlank(order.getContactPhone(), address.getContactPhone()));

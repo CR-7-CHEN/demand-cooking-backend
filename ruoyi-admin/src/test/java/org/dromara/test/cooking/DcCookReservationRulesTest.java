@@ -9,6 +9,7 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
+import org.dromara.system.domain.cooking.DcCookAddress;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
@@ -63,6 +64,26 @@ public class DcCookReservationRulesTest {
     }
 
     @Test
+    @DisplayName("rejects booking a service provided by the same user")
+    void submitRejectsSelfProvidedService() {
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, chefMapper, chefTimeMapper);
+        DcCookChef chef = approvedChef(20L);
+        chef.setUserId(10L);
+        when(chefMapper.selectById(20L)).thenReturn(chef);
+        when(chefTimeMapper.exists(any(Wrapper.class))).thenReturn(true);
+        when(orderMapper.exists(any(Wrapper.class))).thenReturn(false);
+        when(orderMapper.insert(any(DcCookOrder.class))).thenReturn(1);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.submit(orderBoWithAddress()));
+
+        assertEquals("不能预约自己提供的服务", ex.getMessage());
+        verify(orderMapper, never()).insert(any(DcCookOrder.class));
+    }
+
+    @Test
     @DisplayName("defaults each reservation to a three hour lock")
     void submitCreatesThreeHourLock() {
         DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
@@ -104,6 +125,33 @@ public class DcCookReservationRulesTest {
         LambdaQueryWrapper<?> wrapper = (LambdaQueryWrapper<?>) wrapperCaptor.getValue();
         assertTrue(wrapper.getSqlSegment().contains("startTime"));
         assertTrue(wrapper.getSqlSegment().contains("endTime"));
+    }
+
+    @Test
+    @DisplayName("rejects address id that does not belong to submitter")
+    void submitRejectsAddressOwnedByAnotherUser() {
+        initTableInfo(DcCookOrder.class);
+        initTableInfo(DcCookAddress.class);
+        DcCookChefMapper chefMapper = mock(DcCookChefMapper.class);
+        DcCookChefTimeMapper chefTimeMapper = mock(DcCookChefTimeMapper.class);
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookAddressMapper addressMapper = mock(DcCookAddressMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, chefMapper, chefTimeMapper, addressMapper);
+        when(chefMapper.selectById(20L)).thenReturn(approvedChef(20L));
+        when(chefTimeMapper.exists(any(Wrapper.class))).thenReturn(true);
+        when(orderMapper.exists(any(Wrapper.class))).thenReturn(false);
+        when(addressMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.submit(orderBoWithAddress()));
+
+        assertEquals("无权使用该地址", ex.getMessage());
+        ArgumentCaptor<Wrapper> wrapperCaptor = ArgumentCaptor.forClass(Wrapper.class);
+        verify(addressMapper).selectOne(wrapperCaptor.capture());
+        @SuppressWarnings("unchecked")
+        LambdaQueryWrapper<?> wrapper = (LambdaQueryWrapper<?>) wrapperCaptor.getValue();
+        assertTrue(wrapper.getSqlSegment().contains("address_id"));
+        assertTrue(wrapper.getSqlSegment().contains("user_id"));
+        verify(orderMapper, never()).insert(any(DcCookOrder.class));
     }
 
     @Test
@@ -200,6 +248,11 @@ public class DcCookReservationRulesTest {
 
     private DcCookOrderServiceImpl newService(DcCookOrderMapper orderMapper, DcCookChefMapper chefMapper,
                                               DcCookChefTimeMapper chefTimeMapper) {
+        return newService(orderMapper, chefMapper, chefTimeMapper, mock(DcCookAddressMapper.class));
+    }
+
+    private DcCookOrderServiceImpl newService(DcCookOrderMapper orderMapper, DcCookChefMapper chefMapper,
+                                              DcCookChefTimeMapper chefTimeMapper, DcCookAddressMapper addressMapper) {
         IDcCookConfigService configService = mock(IDcCookConfigService.class);
         when(configService.selectConfigValueByKey("cooking.service.duration.hours")).thenReturn("3");
         when(configService.selectConfigValueByKey("cooking.reserve.min.advance.minutes")).thenReturn("60");
@@ -208,7 +261,7 @@ public class DcCookReservationRulesTest {
             orderMapper,
             chefMapper,
             chefTimeMapper,
-            mock(DcCookAddressMapper.class),
+            addressMapper,
             mock(DcCookMessageMapper.class),
             mock(SysUserMapper.class),
             configService
@@ -219,9 +272,14 @@ public class DcCookReservationRulesTest {
         DcCookOrderBo bo = new DcCookOrderBo();
         bo.setChefId(20L);
         bo.setUserId(10L);
-        bo.setAddressId(30L);
-        bo.setServiceStartTime(hoursFromNow(2));
+        bo.setServiceStartTime(nextHalfHourBoundary());
         bo.setDishSnapshot("{}");
+        return bo;
+    }
+
+    private DcCookOrderBo orderBoWithAddress() {
+        DcCookOrderBo bo = orderBo();
+        bo.setAddressId(30L);
         return bo;
     }
 
@@ -254,6 +312,24 @@ public class DcCookReservationRulesTest {
 
     private Date hoursFromNow(int hours) {
         return new Date(System.currentTimeMillis() + hours * 60 * 60_000L);
+    }
+
+    private Date nextHalfHourBoundary() {
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.setTime(hoursFromNow(2));
+        int minute = calendar.get(java.util.Calendar.MINUTE);
+        calendar.set(java.util.Calendar.SECOND, 0);
+        calendar.set(java.util.Calendar.MILLISECOND, 0);
+        if (minute == 0 || minute == 30) {
+            return calendar.getTime();
+        }
+        if (minute < 30) {
+            calendar.set(java.util.Calendar.MINUTE, 30);
+        } else {
+            calendar.add(java.util.Calendar.HOUR_OF_DAY, 1);
+            calendar.set(java.util.Calendar.MINUTE, 0);
+        }
+        return calendar.getTime();
     }
 
     private DcCookOrder orderWithNo(String orderNo) {

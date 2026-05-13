@@ -215,13 +215,6 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         lqw.in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(AUDIT_APPROVED));
         lqw.in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(STATUS_NORMAL));
         lqw.ge(DcCookChef::getHealthCertExpireDate, today);
-        lqw.apply("chef_id in ("
-                + "select chef_id "
-                + "from dc_cook_order "
-                + "where del_flag = '0' "
-                + "and status in ({0}, {1})"
-                + ")",
-            DcCookOrderStatus.COMPLETED, DcCookOrderStatus.LEGACY_COMPLETED);
         applyMealPeriodFilter(lqw, bo.getMealPeriod());
         lqw.orderByDesc(DcCookChef::getCompletedOrders)
             .orderByDesc(DcCookChef::getRating)

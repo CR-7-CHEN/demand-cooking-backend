@@ -201,6 +201,25 @@ public class DcCookOrderStatusServiceTest {
     }
 
     @Test
+    @DisplayName("pay success rejects orders while price objection is being handled")
+    public void paySuccessRejectsPriceObjection() {
+        DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
+        DcCookMessageMapper messageMapper = mock(DcCookMessageMapper.class);
+        DcCookOrderServiceImpl service = newService(orderMapper, messageMapper);
+        DcCookOrder order = order(9L, DcCookOrderStatus.PRICE_OBJECTION);
+        when(orderMapper.selectById(order.getOrderId())).thenReturn(order);
+
+        DcCookOrderActionBo bo = new DcCookOrderActionBo();
+        bo.setOrderId(order.getOrderId());
+
+        ServiceException ex = assertThrows(ServiceException.class, () -> service.paySuccess(bo));
+
+        assertEquals("当前订单报价异议处理中，请等待厨师重新报价后再支付", ex.getMessage());
+        verify(orderMapper, never()).updateById(any(DcCookOrder.class));
+        verify(messageMapper, never()).insert(any(DcCookMessage.class));
+    }
+
+    @Test
     @DisplayName("user cancel rejects orders after actual service start")
     public void userCancelRejectsAfterActualServiceStart() {
         DcCookOrderMapper orderMapper = mock(DcCookOrderMapper.class);
