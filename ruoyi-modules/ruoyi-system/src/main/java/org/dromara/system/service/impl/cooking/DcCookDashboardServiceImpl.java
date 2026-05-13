@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.cooking.DcCookChef;
+import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.cooking.DcCookComplaint;
 import org.dromara.system.domain.cooking.DcCookComplaintStatus;
 import org.dromara.system.domain.cooking.DcCookOrder;
@@ -34,10 +35,6 @@ import java.util.Map;
 public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
 
     private static final String USER_TYPE_APP = "app_user";
-    private static final String AUDIT_PENDING = "0";
-    private static final String AUDIT_APPROVED = "1";
-    private static final String CHEF_STATUS_NORMAL = "0";
-    private static final String CHEF_STATUS_RESIGNED = "3";
     private static final String TREND_MODE_WEEK = "week";
     private static final DateTimeFormatter TREND_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter TREND_LABEL_FORMAT = DateTimeFormatter.ofPattern("MM.dd");
@@ -87,22 +84,22 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
             .isNotNull(DcCookOrder::getPayAmount)
             .ge(DcCookOrder::getPayTime, start)
             .lt(DcCookOrder::getPayTime, end)
-            .in(DcCookOrder::getStatus, PAID_ORDER_STATUSES));
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(PAID_ORDER_STATUSES)));
         return sumPayAmount(orders);
     }
 
     private Long countServiceChefs() {
         return chefMapper.selectCount(Wrappers.lambdaQuery(DcCookChef.class)
             .and(wrapper -> wrapper
-                .eq(DcCookChef::getChefStatus, "APPROVED")
+                .in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(DcCookChefStatus.NORMAL))
                 .or(inner -> inner
-                    .eq(DcCookChef::getAuditStatus, AUDIT_APPROVED)
-                    .eq(DcCookChef::getChefStatus, CHEF_STATUS_NORMAL))));
+                    .in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(DcCookChefStatus.AUDIT_APPROVED))
+                    .in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(DcCookChefStatus.NORMAL)))));
     }
 
     private Long countResignedChefs() {
         return chefMapper.selectCount(Wrappers.lambdaQuery(DcCookChef.class)
-            .in(DcCookChef::getChefStatus, Arrays.asList("RESIGNED", CHEF_STATUS_RESIGNED)));
+            .in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(DcCookChefStatus.RESIGNED)));
     }
 
     private Long countAppUsers(Date start, Date end) {
@@ -125,7 +122,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
             .isNotNull(DcCookOrder::getPayTime)
             .ge(DcCookOrder::getPayTime, start)
             .lt(DcCookOrder::getPayTime, end)
-            .in(DcCookOrder::getStatus, PAID_ORDER_STATUSES));
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(PAID_ORDER_STATUSES)));
 
         Map<LocalDate, BigDecimal> amountMap = new HashMap<>();
         for (DcCookOrder order : orders) {
@@ -147,7 +144,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
 
     private List<DcCookDashboardOverviewVo.PendingItem> buildPendingItems() {
         List<DcCookDashboardOverviewVo.PendingItem> items = new ArrayList<>(3);
-        items.add(pendingItem("chefAudit", "厨师审核待处理", "PENDING", countPendingChefAudits(), "danger"));
+        items.add(pendingItem("chefAudit", "厨师审核待处理", DcCookChefStatus.AUDIT_PENDING, countPendingChefAudits(), "danger"));
         items.add(pendingItem("complaintReply", "用户投诉待处理", DcCookComplaintStatus.PENDING, countPendingComplaints(), "warning"));
         items.add(pendingItem("chefService", "厨师待服务", DcCookOrderStatus.WAITING_SERVICE, countWaitingServiceOrders(), "success"));
         return items;
@@ -155,17 +152,17 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
 
     private Long countPendingChefAudits() {
         return chefMapper.selectCount(Wrappers.lambdaQuery(DcCookChef.class)
-            .in(DcCookChef::getAuditStatus, Arrays.asList("PENDING", AUDIT_PENDING)));
+            .in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(DcCookChefStatus.AUDIT_PENDING)));
     }
 
     private Long countPendingComplaints() {
         return complaintMapper.selectCount(Wrappers.lambdaQuery(DcCookComplaint.class)
-            .eq(DcCookComplaint::getStatus, DcCookComplaintStatus.PENDING));
+            .in(DcCookComplaint::getStatus, DcCookComplaintStatus.compatibleStatuses(DcCookComplaintStatus.PENDING)));
     }
 
     private Long countWaitingServiceOrders() {
         return orderMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE));
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_SERVICE)));
     }
 
     private DcCookDashboardOverviewVo.PendingItem pendingItem(String key, String label, String status, Long count, String tone) {
@@ -186,7 +183,7 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
         for (DcCookOrder order : page.getRecords()) {
             DcCookDashboardOverviewVo.RecentOrderItem item = new DcCookDashboardOverviewVo.RecentOrderItem();
             item.setOrderNo(order.getOrderNo());
-            item.setStatus(order.getStatus());
+            item.setStatus(DcCookOrderStatus.normalize(order.getStatus()));
             item.setStatusLabel(statusLabel(order.getStatus()));
             item.setCreateTime(order.getCreateTime());
             recentOrders.add(item);
@@ -199,10 +196,10 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
             .select(DcCookChef::getChefId, DcCookChef::getChefName, DcCookChef::getRating,
                 DcCookChef::getCompletedOrders, DcCookChef::getAvatarUrl)
             .and(wrapper -> wrapper
-                .eq(DcCookChef::getChefStatus, "APPROVED")
+                .in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(DcCookChefStatus.NORMAL))
                 .or(inner -> inner
-                    .eq(DcCookChef::getAuditStatus, AUDIT_APPROVED)
-                    .eq(DcCookChef::getChefStatus, CHEF_STATUS_NORMAL)))
+                    .in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(DcCookChefStatus.AUDIT_APPROVED))
+                    .in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(DcCookChefStatus.NORMAL))))
             .orderByDesc(DcCookChef::getRating)
             .orderByDesc(DcCookChef::getCompletedOrders));
         List<DcCookDashboardOverviewVo.TopChefItem> result = new ArrayList<>(5);
@@ -219,13 +216,14 @@ public class DcCookDashboardServiceImpl implements IDcCookDashboardService {
     }
 
     private String statusLabel(String status) {
-        if (DcCookOrderStatus.WAITING_RESPONSE.equals(status)) {
+        if (DcCookOrderStatus.matches(status, DcCookOrderStatus.WAITING_RESPONSE)) {
             return "待派单";
         }
-        if (DcCookOrderStatus.WAITING_SERVICE.equals(status) || DcCookOrderStatus.WAITING_CONFIRM.equals(status)) {
+        if (DcCookOrderStatus.matches(status, DcCookOrderStatus.WAITING_SERVICE)
+            || DcCookOrderStatus.matches(status, DcCookOrderStatus.WAITING_CONFIRM)) {
             return "进行中";
         }
-        if (DcCookOrderStatus.COMPLETED.equals(status)) {
+        if (DcCookOrderStatus.matches(status, DcCookOrderStatus.COMPLETED)) {
             return "已完成";
         }
         return status;

@@ -18,6 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
+import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.vo.SysOssUploadVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefCommissionOrdersVo;
 import org.dromara.system.domain.vo.cooking.DcCookChefWorkbenchVo;
@@ -46,7 +47,7 @@ import java.util.UUID;
 public class DcCookChefController {
 
     private static final String CHEF_IMAGE_PATH = "/cooking/chef/image/";
-    private static final String AUDIT_PENDING = "0";
+    private static final String AUDIT_PENDING = DcCookChefStatus.AUDIT_PENDING;
     private static final Path CHEF_UPLOAD_DIR = Path.of(System.getProperty("user.dir"), "uploads", "cooking", "chef");
 
     private final IDcCookChefService chefService;
@@ -118,7 +119,7 @@ public class DcCookChefController {
         Long userId = LoginHelper.getUserId();
         DcCookChefVo mine = chefService.queryByUserId(userId);
         if (mine != null) {
-            if (AUDIT_PENDING.equals(mine.getAuditStatus())) {
+            if (DcCookChefStatus.matchesAuditStatus(mine.getAuditStatus(), AUDIT_PENDING)) {
                 throw new ServiceException("当前入驻申请正在审核中，请勿重复提交");
             }
             bo.setChefId(mine.getChefId());

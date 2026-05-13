@@ -1,5 +1,6 @@
 package org.dromara.test.cooking;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -25,6 +26,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -60,7 +62,7 @@ public class DcCookSettlementFlowTest {
             setProperty(bo, "reviewReasonType", "AMOUNT");
             setProperty(bo, "reviewRemark", "订单金额需要复核");
         }));
-        assertEquals("REVIEWING", settlement.getStatus());
+        assertEquals("1", settlement.getStatus());
         assertEquals("AMOUNT", getProperty(settlement, "reviewReasonType"));
         assertEquals("订单金额需要复核", getProperty(settlement, "reviewRemark"));
         assertNotNull(getProperty(settlement, "reviewApplyTime"));
@@ -69,18 +71,18 @@ public class DcCookSettlementFlowTest {
             setProperty(bo, "reviewResult", "KEEP");
             setProperty(bo, "reviewReply", "平台已复核，无需重算");
         }));
-        assertEquals("GENERATED", settlement.getStatus());
+        assertEquals("0", settlement.getStatus());
         assertEquals("KEEP", getProperty(settlement, "reviewResult"));
         assertEquals("平台已复核，无需重算", getProperty(settlement, "reviewReply"));
         assertNotNull(getProperty(settlement, "reviewHandleTime"));
 
         invokeAction(service, "confirm", actionBo(1L, bo -> {
         }));
-        assertEquals("CONFIRMED", settlement.getStatus());
+        assertEquals("2", settlement.getStatus());
         assertNotNull(getProperty(settlement, "confirmTime"));
 
         invokeAction(service, "pay", actionBo(1L, bo -> setProperty(bo, "payRemark", "线下打款完成")));
-        assertEquals("PAID", settlement.getStatus());
+        assertEquals("3", settlement.getStatus());
         assertEquals("线下打款完成", getProperty(settlement, "payRemark"));
         assertNotNull(getProperty(settlement, "payTime"));
 
@@ -129,7 +131,7 @@ public class DcCookSettlementFlowTest {
         }));
 
         assertEquals(2L, settlement.getSettlementId());
-        assertEquals("GENERATED", settlement.getStatus());
+        assertEquals("0", settlement.getStatus());
         assertEquals(Integer.valueOf(2), settlement.getOrderCount());
         assertBigDecimal("200.00", settlement.getOrderAmount());
         assertBigDecimal("0.9000", settlement.getChefRate());
@@ -159,7 +161,54 @@ public class DcCookSettlementFlowTest {
 
         DcCookSettlementVo result = service.queryById(3L);
 
-        assertEquals("PAID", result.getStatus());
+        assertEquals("3", result.getStatus());
+    }
+
+    @Test
+    @DisplayName("pay requires a non blank pay remark before marking settlement paid")
+    void payRequiresNonBlankPayRemark() {
+        DcCookSettlementMapper settlementMapper = mock(DcCookSettlementMapper.class);
+        DcCookSettlement settlement = new DcCookSettlement();
+        settlement.setSettlementId(4L);
+        settlement.setStatus("2");
+        when(settlementMapper.selectById(4L)).thenReturn(settlement);
+
+        DcCookSettlementServiceImpl service = newService(settlementMapper, mock(DcCookOrderMapper.class), mock(DcCookChefMapper.class));
+        DcCookSettlementBo bo = new DcCookSettlementBo();
+        bo.setSettlementId(4L);
+        bo.setPayRemark("  ");
+
+        assertThrows(org.dromara.common.core.exception.ServiceException.class, () -> service.pay(bo));
+        verify(settlementMapper, never()).updateById(any(DcCookSettlement.class));
+        assertEquals("2", settlement.getStatus());
+    }
+
+    @Test
+    @DisplayName("query wrapper matches numeric and legacy English settlement status data")
+    void queryWrapperMatchesNumericAndLegacyEnglishStatusData() throws Exception {
+        initTableInfo(DcCookSettlement.class);
+        DcCookSettlementServiceImpl service = newService(
+            mock(DcCookSettlementMapper.class),
+            mock(DcCookOrderMapper.class),
+            mock(DcCookChefMapper.class)
+        );
+
+        DcCookSettlementBo bo = new DcCookSettlementBo();
+        bo.setStatus("3");
+        LambdaQueryWrapper<DcCookSettlement> paidWrapper = invokeSettlementQueryWrapper(service, bo);
+        List<String> paidStatuses = invokeCompatibleSettlementStatuses(service, "3");
+
+        assertTrue(String.valueOf(paidWrapper.getSqlSegment()).contains("status"));
+        assertTrue(paidStatuses.contains("3"));
+        assertTrue(paidStatuses.contains("PAID"));
+
+        bo.setStatus("CONFIRMED");
+        LambdaQueryWrapper<DcCookSettlement> confirmedWrapper = invokeSettlementQueryWrapper(service, bo);
+        List<String> confirmedStatuses = invokeCompatibleSettlementStatuses(service, "CONFIRMED");
+
+        assertTrue(String.valueOf(confirmedWrapper.getSqlSegment()).contains("status"));
+        assertTrue(confirmedStatuses.contains("2"));
+        assertTrue(confirmedStatuses.contains("CONFIRMED"));
     }
 
     @Test
@@ -199,7 +248,7 @@ public class DcCookSettlementFlowTest {
         DcCookSettlement settlement = captor.getValue();
         assertEquals(8L, settlement.getChefId());
         assertEquals("2026-04", settlement.getSettlementMonth());
-        assertEquals("GENERATED", settlement.getStatus());
+        assertEquals("0", settlement.getStatus());
         assertEquals("N", settlement.getManualFlag());
         assertEquals(Integer.valueOf(1), settlement.getOrderCount());
         assertBigDecimal("200.00", settlement.getOrderAmount());
@@ -234,6 +283,14 @@ public class DcCookSettlementFlowTest {
         assertTrue(Boolean.TRUE.equals(result));
     }
 
+    @SuppressWarnings("unchecked")
+    private LambdaQueryWrapper<DcCookSettlement> invokeSettlementQueryWrapper(DcCookSettlementServiceImpl service, DcCookSettlementBo bo)
+        throws Exception {
+        Method method = DcCookSettlementServiceImpl.class.getDeclaredMethod("buildQueryWrapper", DcCookSettlementBo.class);
+        method.setAccessible(true);
+        return (LambdaQueryWrapper<DcCookSettlement>) method.invoke(service, bo);
+    }
+
     private void setProperty(Object target, String propertyName, Object value) {
         BeanWrapper wrapper = new BeanWrapperImpl(target);
         wrapper.setPropertyValue(propertyName, value);
@@ -261,6 +318,13 @@ public class DcCookSettlementFlowTest {
     private void assertBigDecimal(String expected, BigDecimal actual) {
         assertNotNull(actual);
         assertEquals(0, actual.compareTo(new BigDecimal(expected)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> invokeCompatibleSettlementStatuses(DcCookSettlementServiceImpl service, String status) throws Exception {
+        Method method = DcCookSettlementServiceImpl.class.getDeclaredMethod("compatibleStatusValues", String.class);
+        method.setAccessible(true);
+        return (List<String>) method.invoke(service, status);
     }
 
     private void initTableInfo(Class<?> entityClass) {

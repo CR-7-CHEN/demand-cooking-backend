@@ -16,8 +16,10 @@ import org.dromara.system.domain.cooking.DcCookAddress;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookChefTime;
 import org.dromara.system.domain.cooking.DcCookMessage;
+import org.dromara.system.domain.cooking.DcCookMessageStatus;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
+import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.vo.cooking.DcCookOrderCancelPreviewVo;
 import org.dromara.system.domain.vo.cooking.DcCookOrderVo;
 import org.dromara.system.mapper.SysUserMapper;
@@ -71,6 +73,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     public DcCookOrderVo queryById(Long orderId) {
         DcCookOrderVo vo = baseMapper.selectVoById(orderId);
         if (vo != null) {
+            normalizeReadStatus(vo);
             hydrateDisplayNames(List.of(vo));
         }
         return vo;
@@ -79,6 +82,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public TableDataInfo<DcCookOrderVo> queryPageList(DcCookOrderBo bo, PageQuery pageQuery) {
         Page<DcCookOrderVo> page = baseMapper.selectVoPage(pageQuery.build(), buildQueryWrapper(bo));
+        if (page.getRecords() != null) {
+            page.getRecords().forEach(this::normalizeReadStatus);
+        }
         hydrateDisplayNames(page.getRecords());
         return TableDataInfo.build(page);
     }
@@ -139,14 +145,14 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean quote(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        if (!DcCookOrderStatus.WAITING_RESPONSE.equals(order.getStatus())
-            && !DcCookOrderStatus.PRICE_OBJECTION.equals(order.getStatus())) {
+        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_RESPONSE)
+            && !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.PRICE_OBJECTION)) {
             throw new ServiceException("order cannot be quoted now");
         }
         if (bo.getQuoteAmount() == null || bo.getQuoteAmount().compareTo(MIN_QUOTE_AMOUNT) < 0) {
             throw new ServiceException("quoteAmount must be at least 50");
         }
-        if (DcCookOrderStatus.WAITING_RESPONSE.equals(order.getStatus())) {
+        if (DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_RESPONSE)) {
             order.setPayDeadline(addMinutes(new Date(), getIntConfig("cooking.pay.timeout.minutes", DEFAULT_PAY_MINUTES)));
         } else if (order.getQuoteUpdateCount() != null && order.getQuoteUpdateCount() >= 2) {
             throw new ServiceException("quote can only be updated once after objection");
@@ -199,8 +205,8 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean paySuccess(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        if (!DcCookOrderStatus.WAITING_PAY.equals(order.getStatus())
-            && !DcCookOrderStatus.PRICE_OBJECTION.equals(order.getStatus())) {
+        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_PAY)
+            && !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.PRICE_OBJECTION)) {
             throw new ServiceException("order cannot be paid now");
         }
         if (order.getPayDeadline() != null && order.getPayDeadline().before(new Date())) {
@@ -259,7 +265,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean confirm(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        if (!DcCookOrderStatus.WAITING_CONFIRM.equals(order.getStatus())) {
+        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_CONFIRM)) {
             throw new ServiceException("当前订单还未进入待确认状态，不能确认完成");
         }
         order.setStatus(DcCookOrderStatus.COMPLETED);
@@ -303,7 +309,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     @Override
     public Boolean userCancel(DcCookOrderActionBo bo) {
         DcCookOrder order = requireOrder(bo.getOrderId());
-        if (DcCookOrderStatus.UNPAID_CANCELABLE.contains(order.getStatus())) {
+        if (DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.UNPAID_CANCELABLE).contains(order.getStatus())) {
             order.setStatus(DcCookOrderStatus.CANCELED);
             order.setCancelType(DcCookOrderStatus.CANCEL_USER_UNPAID);
             order.setCancelReason(bo.getCancelReason());
@@ -359,21 +365,23 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
             if (groupedStatuses.isEmpty()) {
                 lqw.eq(DcCookOrder::getOrderId, -1L);
             } else {
-                lqw.in(DcCookOrder::getStatus, groupedStatuses);
+                lqw.in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(groupedStatuses));
             }
             String trimmedGroup = bo.getStatusGroup().trim();
             if (DcCookOrderStatus.USER_TAB_PAID.equals(trimmedGroup)) {
                 lqw.eq(DcCookOrder::getServiceStartedFlag, "0");
             } else if (DcCookOrderStatus.USER_TAB_SERVING.equals(trimmedGroup)) {
                 lqw.and(w -> w
-                    .ne(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+                    .notIn(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_SERVICE))
                     .or(inner -> inner
-                        .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+                        .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_SERVICE))
                         .eq(DcCookOrder::getServiceStartedFlag, "1"))
                 );
             }
         } else {
-            lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DcCookOrder::getStatus, bo.getStatus());
+            if (StringUtils.isNotBlank(bo.getStatus())) {
+                lqw.in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(bo.getStatus()));
+            }
         }
         if (StringUtils.isNotBlank(bo.getMonth())) {
             applySettlementMonthFilter(lqw, bo.getMonth(),
@@ -395,7 +403,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private void applySettlementMonthFilter(LambdaQueryWrapper<DcCookOrder> lqw, String month, boolean defaultCompletedOnly) {
         MonthRange range = resolveMonthRange(month);
         if (defaultCompletedOnly) {
-            lqw.eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED);
+            lqw.in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.COMPLETED));
         }
         lqw.and(wrapper -> wrapper
             .ge(DcCookOrder::getCompleteTime, range.start())
@@ -447,14 +455,15 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     }
 
     private void assertStatus(DcCookOrder order, String status) {
-        if (!status.equals(order.getStatus())) {
+        if (!DcCookOrderStatus.matches(order.getStatus(), status)) {
             throw new ServiceException("invalid order status");
         }
     }
 
     private void assertChefCanTakeOrder(DcCookChef chef) {
         Date today = Date.from(LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant());
-        if (!"1".equals(chef.getAuditStatus()) || !"0".equals(chef.getChefStatus())) {
+        if (!DcCookChefStatus.matchesAuditStatus(chef.getAuditStatus(), DcCookChefStatus.AUDIT_APPROVED)
+            || !DcCookChefStatus.matchesChefStatus(chef.getChefStatus(), DcCookChefStatus.NORMAL)) {
             throw new ServiceException("chef cannot take order");
         }
         if (chef.getHealthCertExpireDate() != null && chef.getHealthCertExpireDate().before(today)) {
@@ -482,8 +491,8 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         }
         boolean overlapped = baseMapper.exists(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
-            .notIn(DcCookOrder::getStatus, DcCookOrderStatus.TERMINAL_STATUSES)
-            .and(wrapper -> wrapper.ne(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_CONFIRM)
+            .notIn(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.TERMINAL_STATUSES))
+            .and(wrapper -> wrapper.notIn(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_CONFIRM))
                 .or()
                 .isNull(DcCookOrder::getServiceCompleteTime))
             .lt(DcCookOrder::getServiceStartTime, endTime)
@@ -557,7 +566,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     }
 
     private void assertPaidCancelable(DcCookOrder order) {
-        if (!DcCookOrderStatus.WAITING_SERVICE.equals(order.getStatus())) {
+        if (!DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.WAITING_SERVICE)) {
             throw new ServiceException("paid order cannot be canceled now");
         }
         if (hasServiceStarted(order)) {
@@ -581,7 +590,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private int closeResponseTimeoutOrders(Date now) {
         Date deadline = addMinutes(now, -getIntConfig("cooking.response.timeout.minutes", DEFAULT_RESPONSE_MINUTES));
         List<DcCookOrder> orders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_RESPONSE)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_RESPONSE))
             .le(DcCookOrder::getCreateTime, deadline));
         return transitionOrders(orders, DcCookOrderStatus.WAITING_RESPONSE, DcCookOrderStatus.RESPONSE_TIMEOUT_CLOSED, order -> {
             order.setCancelType("SYSTEM_TIMEOUT");
@@ -592,7 +601,8 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
 
     private int closePayTimeoutOrders(Date now) {
         List<DcCookOrder> orders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .in(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_PAY, DcCookOrderStatus.PRICE_OBJECTION)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(List.of(
+                DcCookOrderStatus.WAITING_PAY, DcCookOrderStatus.PRICE_OBJECTION)))
             .isNotNull(DcCookOrder::getPayDeadline)
             .le(DcCookOrder::getPayDeadline, now));
         return transitionOrders(orders, null, DcCookOrderStatus.PAY_TIMEOUT_CLOSED, order -> {
@@ -605,7 +615,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private int closeObjectionTimeoutOrders(Date now) {
         Date deadline = addMinutes(now, -getIntConfig("cooking.response.timeout.minutes", DEFAULT_RESPONSE_MINUTES));
         List<DcCookOrder> orders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.PRICE_OBJECTION)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.PRICE_OBJECTION))
             .isNotNull(DcCookOrder::getObjectionTime)
             .le(DcCookOrder::getObjectionTime, deadline)
             .and(wrapper -> wrapper.isNull(DcCookOrder::getPayDeadline).or().gt(DcCookOrder::getPayDeadline, now)));
@@ -618,7 +628,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
 
     private int autoServiceCompleteOrders(Date now) {
         List<DcCookOrder> orders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_SERVICE))
             .isNotNull(DcCookOrder::getServiceEndTime)
             .le(DcCookOrder::getServiceEndTime, now));
         return transitionOrders(orders, DcCookOrderStatus.WAITING_SERVICE, DcCookOrderStatus.WAITING_CONFIRM, order -> {
@@ -630,7 +640,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private int autoConfirmCompleteOrders(Date now) {
         Date deadline = addHours(now, -getIntConfig("cooking.confirm.timeout.hours", DEFAULT_CONFIRM_HOURS));
         List<DcCookOrder> orders = baseMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_CONFIRM)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_CONFIRM))
             .isNotNull(DcCookOrder::getServiceCompleteTime)
             .le(DcCookOrder::getServiceCompleteTime, deadline));
         return transitionOrders(orders, DcCookOrderStatus.WAITING_CONFIRM, DcCookOrderStatus.COMPLETED, order -> {
@@ -645,7 +655,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         int processed = 0;
         for (DcCookOrder order : orders) {
             String currentStatus = order.getStatus();
-            if (expectedStatus != null && !expectedStatus.equals(currentStatus)) {
+            if (expectedStatus != null && !DcCookOrderStatus.matches(currentStatus, expectedStatus)) {
                 continue;
             }
             order.setStatus(nextStatus);
@@ -657,7 +667,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
                 continue;
             }
             processed++;
-            if (DcCookOrderStatus.COMPLETED.equals(nextStatus)) {
+            if (DcCookOrderStatus.matches(nextStatus, DcCookOrderStatus.COMPLETED)) {
                 incrementChefCompleted(order.getChefId());
             }
             recordMessage(messageType, receiverType, receiverId(order, receiverType), order, messageSummary);
@@ -698,7 +708,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         message.setRelatedBizType("ORDER");
         message.setRelatedBizId(order.getOrderId());
         message.setContentSummary(summary);
-        message.setSendStatus("SENT");
+        message.setSendStatus(DcCookMessageStatus.SENT);
         message.setSendTime(new Date());
         messageMapper.insert(message);
     }
@@ -736,6 +746,13 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
                 record.setChefName(chef.getChefName());
             }
         });
+    }
+
+    private DcCookOrderVo normalizeReadStatus(DcCookOrderVo vo) {
+        if (vo != null) {
+            vo.setStatus(DcCookOrderStatus.normalize(vo.getStatus()));
+        }
+        return vo;
     }
 
     private record MonthRange(Date start, Date end) {

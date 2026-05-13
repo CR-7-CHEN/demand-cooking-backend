@@ -15,6 +15,7 @@ import org.dromara.system.domain.bo.cooking.DcCookSupportTicketBo;
 import org.dromara.system.domain.cooking.DcCookFaq;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookSupportTicket;
+import org.dromara.system.domain.cooking.DcCookSupportTicketStatus;
 import org.dromara.system.domain.vo.cooking.DcCookFaqVo;
 import org.dromara.system.domain.vo.cooking.DcCookSupportAnswerVo;
 import org.dromara.system.domain.vo.cooking.DcCookSupportTicketVo;
@@ -36,9 +37,9 @@ import java.util.Objects;
 public class DcCookSupportServiceImpl implements IDcCookSupportService {
 
     private static final String ENABLED = "0";
-    private static final String TICKET_PENDING = "PENDING";
-    private static final String TICKET_REPLIED = "REPLIED";
-    private static final String TICKET_CLOSED = "CLOSED";
+    private static final String TICKET_PENDING = DcCookSupportTicketStatus.PENDING;
+    private static final String TICKET_REPLIED = DcCookSupportTicketStatus.REPLIED;
+    private static final String TICKET_CLOSED = DcCookSupportTicketStatus.CLOSED;
 
     private static final List<String> ORDER_WORDS = List.of("订单", "状态", "进度", "支付", "报价", "服务", "取消", "退款");
 
@@ -104,13 +105,16 @@ public class DcCookSupportServiceImpl implements IDcCookSupportService {
         ticket.setStatus(TICKET_PENDING);
         ticket.setRemark(bo.getRemark());
         ticketMapper.insert(ticket);
-        return ticketMapper.selectVoById(ticket.getTicketId());
+        return normalizeReadStatus(ticketMapper.selectVoById(ticket.getTicketId()));
     }
 
     @Override
     public TableDataInfo<DcCookSupportTicketVo> queryMyTicketPage(Long userId, DcCookSupportTicketBo bo, PageQuery pageQuery) {
         bo.setUserId(userId);
         Page<DcCookSupportTicketVo> page = ticketMapper.selectVoPage(pageQuery.build(), buildTicketWrapper(bo));
+        if (page.getRecords() != null) {
+            page.getRecords().forEach(this::normalizeReadStatus);
+        }
         return TableDataInfo.build(page);
     }
 
@@ -123,7 +127,7 @@ public class DcCookSupportServiceImpl implements IDcCookSupportService {
         if (!Objects.equals(userId, ticket.getUserId())) {
             throw new ServiceException("no permission to access this ticket");
         }
-        return ticketMapper.selectVoById(ticketId);
+        return normalizeReadStatus(ticketMapper.selectVoById(ticketId));
     }
 
     @Override
@@ -177,12 +181,15 @@ public class DcCookSupportServiceImpl implements IDcCookSupportService {
     @Override
     public TableDataInfo<DcCookSupportTicketVo> queryTicketPage(DcCookSupportTicketBo bo, PageQuery pageQuery) {
         Page<DcCookSupportTicketVo> page = ticketMapper.selectVoPage(pageQuery.build(), buildTicketWrapper(bo));
+        if (page.getRecords() != null) {
+            page.getRecords().forEach(this::normalizeReadStatus);
+        }
         return TableDataInfo.build(page);
     }
 
     @Override
     public DcCookSupportTicketVo queryTicketById(Long ticketId) {
-        return ticketMapper.selectVoById(ticketId);
+        return normalizeReadStatus(ticketMapper.selectVoById(ticketId));
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -241,7 +248,8 @@ public class DcCookSupportServiceImpl implements IDcCookSupportService {
         lqw.eq(bo.getTicketId() != null, DcCookSupportTicket::getTicketId, bo.getTicketId());
         lqw.eq(bo.getUserId() != null, DcCookSupportTicket::getUserId, bo.getUserId());
         lqw.eq(bo.getOrderId() != null, DcCookSupportTicket::getOrderId, bo.getOrderId());
-        lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DcCookSupportTicket::getStatus, bo.getStatus());
+        lqw.in(StringUtils.isNotBlank(bo.getStatus()), DcCookSupportTicket::getStatus,
+            DcCookSupportTicketStatus.compatibleStatuses(bo.getStatus()));
         lqw.like(StringUtils.isNotBlank(bo.getQuestion()), DcCookSupportTicket::getQuestion, bo.getQuestion());
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
             DcCookSupportTicket::getCreateTime, params.get("beginTime"), params.get("endTime"));
@@ -303,5 +311,12 @@ public class DcCookSupportServiceImpl implements IDcCookSupportService {
     private String buildOrderAnswer(DcCookOrder order) {
         return "订单" + StringUtils.blankToDefault(order.getOrderNo(), String.valueOf(order.getOrderId()))
             + "当前状态：" + order.getStatus() + "。";
+    }
+
+    private DcCookSupportTicketVo normalizeReadStatus(DcCookSupportTicketVo vo) {
+        if (vo != null) {
+            vo.setStatus(DcCookSupportTicketStatus.normalize(vo.getStatus()));
+        }
+        return vo;
     }
 }

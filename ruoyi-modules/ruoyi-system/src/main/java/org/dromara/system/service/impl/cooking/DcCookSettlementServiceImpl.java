@@ -10,6 +10,7 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
 import org.dromara.system.domain.bo.cooking.DcCookSettlementBo;
 import org.dromara.system.domain.cooking.DcCookChef;
+import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.cooking.DcCookSettlement;
@@ -39,7 +40,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
 
     private static final BigDecimal DEFAULT_PLATFORM_RATE = new BigDecimal("0.20");
     private static final BigDecimal VIOLATION_DEDUCTION = new BigDecimal("200");
-    private static final String AUDIT_APPROVED = "1";
+    private static final String AUDIT_APPROVED = DcCookChefStatus.AUDIT_APPROVED;
 
     private final DcCookSettlementMapper baseMapper;
     private final DcCookOrderMapper orderMapper;
@@ -92,7 +93,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
     public int generateMonthlySettlements(String settlementMonth) {
         String month = resolveSettlementMonth(settlementMonth);
         List<DcCookChef> chefs = chefMapper.selectList(Wrappers.lambdaQuery(DcCookChef.class)
-            .eq(DcCookChef::getAuditStatus, AUDIT_APPROVED));
+            .in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(AUDIT_APPROVED)));
         int generated = 0;
         for (DcCookChef chef : chefs) {
             if (chef == null || chef.getChefId() == null) {
@@ -182,9 +183,13 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
     public Boolean pay(DcCookSettlementBo bo) {
         DcCookSettlement settlement = requireSettlement(bo.getSettlementId());
         ensureStatus(settlement, DcCookSettlementStatus.CONFIRMED, "only confirmed settlement can be paid");
+        String payRemark = trimToNull(bo.getPayRemark());
+        if (payRemark == null) {
+            throw new ServiceException("payRemark is required");
+        }
         settlement.setStatus(DcCookSettlementStatus.PAID);
         settlement.setPayTime(new Date());
-        settlement.setPayRemark(trimToNull(bo.getPayRemark()));
+        settlement.setPayRemark(payRemark);
         return baseMapper.updateById(settlement) > 0;
     }
 
@@ -241,16 +246,16 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         lqw.eq(bo.getChefId() != null, DcCookSettlement::getChefId, bo.getChefId());
         lqw.eq(StringUtils.isNotBlank(bo.getSettlementMonth()), DcCookSettlement::getSettlementMonth, bo.getSettlementMonth());
         if (StringUtils.isNotBlank(bo.getStatus())) {
-            if (DcCookSettlementStatus.PAID.equals(bo.getStatus())) {
-                lqw.in(DcCookSettlement::getStatus, DcCookSettlementStatus.PAID, DcCookSettlementStatus.PAID_OFFLINE);
-            } else {
-                lqw.eq(DcCookSettlement::getStatus, bo.getStatus());
-            }
+            lqw.in(DcCookSettlement::getStatus, compatibleStatusValues(bo.getStatus()));
         }
         lqw.between(params != null && params.get("beginTime") != null && params.get("endTime") != null,
             DcCookSettlement::getCreateTime, params == null ? null : params.get("beginTime"), params == null ? null : params.get("endTime"));
         lqw.orderByDesc(DcCookSettlement::getSettlementMonth).orderByDesc(DcCookSettlement::getCreateTime);
         return lqw;
+    }
+
+    private List<String> compatibleStatusValues(String status) {
+        return DcCookSettlementStatus.compatibleStatuses(status);
     }
 
     private int countChefCancel(Long chefId, String month) {
@@ -262,7 +267,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
         MonthRange range = resolveMonthRange(month);
         return Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.COMPLETED))
             .and(wrapper -> wrapper
                 .ge(DcCookOrder::getCompleteTime, range.start())
                 .lt(DcCookOrder::getCompleteTime, range.end())
@@ -389,18 +394,7 @@ public class DcCookSettlementServiceImpl implements IDcCookSettlementService {
     }
 
     private String normalizeStatus(String status) {
-        String normalized = StringUtils.trim(status);
-        if (StringUtils.isBlank(normalized)) {
-            return DcCookSettlementStatus.GENERATED;
-        }
-        normalized = normalized.toUpperCase();
-        if (DcCookSettlementStatus.PAID_OFFLINE.equals(normalized)) {
-            return DcCookSettlementStatus.PAID;
-        }
-        if (DcCookSettlementStatus.MANUAL.equals(normalized)) {
-            return DcCookSettlementStatus.GENERATED;
-        }
-        return normalized;
+        return DcCookSettlementStatus.normalize(status);
     }
 
     private record MonthRange(Date start, Date end) {

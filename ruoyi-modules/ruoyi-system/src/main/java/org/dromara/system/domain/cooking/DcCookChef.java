@@ -58,6 +58,10 @@ public class DcCookChef extends TenantEntity {
 
     private String auditReason;
 
+    private Long auditBy;
+
+    private Date auditTime;
+
     private String chefStatus;
 
     private String resignReason;

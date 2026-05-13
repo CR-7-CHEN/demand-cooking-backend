@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS dc_cook_chef (
     recommend_flag          char(1)       DEFAULT '0' COMMENT '推荐标志（1推荐）',
     audit_status            varchar(30)   DEFAULT '0' COMMENT '审核状态（0待审核1已通过 2已拒绝）',
     audit_reason            varchar(500)  DEFAULT NULL COMMENT '审核原因',
+    audit_by                bigint(20)    DEFAULT NULL COMMENT '审核人',
+    audit_time              datetime      DEFAULT NULL COMMENT '审核时间',
     chef_status             varchar(30)   DEFAULT '0' COMMENT '厨师状态（0正常 1暂停 2禁用 3离职）',
     resign_reason           varchar(500)  DEFAULT NULL COMMENT '离职原因',
     create_dept             bigint(20)    DEFAULT NULL COMMENT '创建部门',
@@ -173,7 +175,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_message (
     related_biz_type      varchar(60)   DEFAULT NULL COMMENT '关联业务类型',
     related_biz_id        bigint(20)    DEFAULT NULL COMMENT '关联业务ID',
     content_summary       varchar(1000) DEFAULT NULL COMMENT '内容摘要',
-    send_status           varchar(30)   DEFAULT 'PENDING' COMMENT '发送状态（PENDING待发送 SENT已发送 FAILED失败）',
+    send_status           varchar(30)   DEFAULT '0' COMMENT '发送状态（0待发送 1已发送 2失败 3发送中，兼容旧值PENDING/SENT/FAILED/SENDING）',
     send_time             datetime      DEFAULT NULL COMMENT '发送时间',
     fail_reason           varchar(500)  DEFAULT NULL COMMENT '失败原因',
     create_dept           bigint(20)    DEFAULT NULL COMMENT '创建部门',
@@ -206,7 +208,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_order (
     service_end_time          datetime      NOT NULL COMMENT '服务结束时间',
     service_started_flag      char(1)       DEFAULT '0' COMMENT 'service started flag (0=no 1=yes)',
     service_started_time      datetime      DEFAULT NULL COMMENT 'actual service started time',
-    status                    varchar(40)   NOT NULL COMMENT '订单状态',
+    status                    varchar(40)   NOT NULL DEFAULT '0' COMMENT '订单状态（0待响应 1待支付 2报价异议中 3待服务 4待确认 5已完成 6已拒单关闭 7响应超时关闭 8异议超时关闭 9支付超时关闭 10已取消 11退款中 12已退款 13退款失败）',
     quote_amount              decimal(12,2) DEFAULT NULL COMMENT '报价金额',
     quote_remark              varchar(1000) DEFAULT NULL COMMENT '报价备注',
     quote_time                datetime      DEFAULT NULL COMMENT '报价时间',
@@ -243,10 +245,6 @@ CREATE TABLE IF NOT EXISTS dc_cook_order (
     KEY idx_dc_cook_order_timeout (tenant_id, status, pay_deadline, service_end_time),
     KEY idx_dc_cook_order_month (tenant_id, chef_id, complete_time, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单表';
-
-ALTER TABLE dc_cook_order
-    ADD COLUMN IF NOT EXISTS service_started_flag char(1) DEFAULT '0' COMMENT 'service started flag (0=no 1=yes)' AFTER service_end_time,
-    ADD COLUMN IF NOT EXISTS service_started_time datetime DEFAULT NULL COMMENT 'actual service started time' AFTER service_started_flag;
 
 UPDATE dc_cook_order
 SET service_started_flag = CASE
@@ -290,8 +288,8 @@ CREATE TABLE IF NOT EXISTS dc_cook_complaint (
     complaint_type  varchar(60)   DEFAULT NULL COMMENT '投诉类型',
     content         varchar(1000) NOT NULL COMMENT '投诉内容',
     image_urls      varchar(1000) DEFAULT NULL COMMENT '图片地址',
-    status          varchar(30)   DEFAULT 'PENDING' COMMENT '状态（PENDING待处理ESTABLISHED成立 REJECTED不成立）',
-    handle_result   varchar(1000) DEFAULT NULL COMMENT '处理结果',
+    status          varchar(30)   DEFAULT '0' COMMENT '状态（0待处理 1成立 2不成立，兼容旧值PENDING/ESTABLISHED/REJECTED）',
+    handle_result   varchar(1000) DEFAULT NULL COMMENT '处理说明',
     handler_id      bigint(20)    DEFAULT NULL COMMENT '处理人ID',
     submit_time     datetime      DEFAULT NULL COMMENT '提交时间',
     handle_time     datetime      DEFAULT NULL COMMENT '处理时间',
@@ -334,7 +332,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_support_ticket (
     order_id     bigint(20)    DEFAULT NULL COMMENT '关联订单ID',
     question     varchar(1000) NOT NULL COMMENT '用户问题',
     reply        varchar(1000) DEFAULT NULL COMMENT '处理回复',
-    status       varchar(20)   DEFAULT 'PENDING' COMMENT '状态（PENDING待处理 REPLIED已回复 CLOSED已关闭）',
+    status       varchar(20)   DEFAULT '0' COMMENT '状态（0待处理 1已回复 2已关闭，兼容旧值PENDING/REPLIED/CLOSED）',
     handler_id   bigint(20)    DEFAULT NULL COMMENT '处理人ID',
     handle_time  datetime      DEFAULT NULL COMMENT '处理时间',
     close_time   datetime      DEFAULT NULL COMMENT '关闭时间',
@@ -378,7 +376,7 @@ CREATE TABLE IF NOT EXISTS dc_cook_settlement (
     violation_deduction    decimal(12,2) DEFAULT 0.00 COMMENT '违规扣款',
     final_commission       decimal(12,2) DEFAULT 0.00 COMMENT '最终佣金（扣除后）',
     payable_amount         decimal(12,2) DEFAULT 0.00 COMMENT '应发金额',
-    status                 varchar(30)   DEFAULT 'GENERATED' COMMENT '结算状态（GENERATED/REVIEWING/CONFIRMED/PAID）',
+    status                 varchar(30)   DEFAULT '0' COMMENT '结算状态（0已生成/1复核中/2已确认/3已发放，兼容旧值GENERATED/REVIEWING/CONFIRMED/PAID）',
     review_reason_type     varchar(40)   DEFAULT NULL COMMENT '复核原因类型',
     review_remark          varchar(500)  DEFAULT NULL COMMENT '复核申请说明',
     review_result          varchar(20)   DEFAULT NULL COMMENT '复核处理结果（KEEP/REGENERATE）',
@@ -401,17 +399,92 @@ CREATE TABLE IF NOT EXISTS dc_cook_settlement (
     KEY idx_dc_cook_settlement_status (tenant_id, settlement_month, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='月度结算表';
 
-ALTER TABLE dc_cook_settlement
-    MODIFY COLUMN status varchar(30) DEFAULT 'GENERATED' COMMENT '结算状态（GENERATED/REVIEWING/CONFIRMED/PAID）',
-    ADD COLUMN IF NOT EXISTS review_reason_type varchar(40) DEFAULT NULL COMMENT '复核原因类型' AFTER status,
-    ADD COLUMN IF NOT EXISTS review_remark varchar(500) DEFAULT NULL COMMENT '复核申请说明' AFTER review_reason_type,
-    ADD COLUMN IF NOT EXISTS review_result varchar(20) DEFAULT NULL COMMENT '复核处理结果（KEEP/REGENERATE）' AFTER review_remark,
-    ADD COLUMN IF NOT EXISTS review_reply varchar(500) DEFAULT NULL COMMENT '复核处理说明' AFTER review_result,
-    ADD COLUMN IF NOT EXISTS review_apply_time datetime DEFAULT NULL COMMENT '复核申请时间' AFTER review_reply,
-    ADD COLUMN IF NOT EXISTS review_handle_time datetime DEFAULT NULL COMMENT '复核处理时间' AFTER review_apply_time,
-    ADD COLUMN IF NOT EXISTS confirm_time datetime DEFAULT NULL COMMENT '确认时间' AFTER generated_time,
-    ADD COLUMN IF NOT EXISTS pay_time datetime DEFAULT NULL COMMENT '发放时间' AFTER confirm_time,
-    ADD COLUMN IF NOT EXISTS pay_remark varchar(500) DEFAULT NULL COMMENT '打款说明' AFTER pay_time;
+UPDATE dc_cook_chef
+SET audit_status = CASE UPPER(audit_status)
+    WHEN 'PENDING' THEN '0'
+    WHEN 'APPROVED' THEN '1'
+    WHEN 'REJECTED' THEN '2'
+    ELSE audit_status
+END
+WHERE audit_status IN ('PENDING', 'APPROVED', 'REJECTED');
+
+UPDATE dc_cook_chef
+SET chef_status = CASE UPPER(chef_status)
+    WHEN 'APPROVED' THEN '0'
+    WHEN 'PENDING_REVIEW' THEN '0'
+    WHEN 'NORMAL' THEN '0'
+    WHEN 'AVAILABLE' THEN '0'
+    WHEN 'PAUSED' THEN '1'
+    WHEN 'DISABLED' THEN '2'
+    WHEN 'RESIGNED' THEN '3'
+    ELSE chef_status
+END
+WHERE chef_status IN ('APPROVED', 'PENDING_REVIEW', 'NORMAL', 'AVAILABLE', 'PAUSED', 'DISABLED', 'RESIGNED');
+
+UPDATE dc_cook_order
+SET status = CASE UPPER(status)
+    WHEN 'WAITING_RESPONSE' THEN '0'
+    WHEN 'WAITING_PAY' THEN '1'
+    WHEN 'PRICE_OBJECTION' THEN '2'
+    WHEN 'WAITING_SERVICE' THEN '3'
+    WHEN 'WAITING_CONFIRM' THEN '4'
+    WHEN 'COMPLETED' THEN '5'
+    WHEN 'REJECTED_CLOSED' THEN '6'
+    WHEN 'RESPONSE_TIMEOUT_CLOSED' THEN '7'
+    WHEN 'OBJECTION_TIMEOUT_CLOSED' THEN '8'
+    WHEN 'PAY_TIMEOUT_CLOSED' THEN '9'
+    WHEN 'CANCELED' THEN '10'
+    WHEN 'REFUNDING' THEN '11'
+    WHEN 'REFUNDED' THEN '12'
+    WHEN 'REFUND_FAILED' THEN '13'
+    ELSE status
+END
+WHERE status IN (
+    'WAITING_RESPONSE', 'WAITING_PAY', 'PRICE_OBJECTION', 'WAITING_SERVICE', 'WAITING_CONFIRM',
+    'COMPLETED', 'REJECTED_CLOSED', 'RESPONSE_TIMEOUT_CLOSED', 'OBJECTION_TIMEOUT_CLOSED',
+    'PAY_TIMEOUT_CLOSED', 'CANCELED', 'REFUNDING', 'REFUNDED', 'REFUND_FAILED'
+);
+
+UPDATE dc_cook_message
+SET send_status = CASE UPPER(send_status)
+    WHEN 'PENDING' THEN '0'
+    WHEN 'SENT' THEN '1'
+    WHEN 'SUCCESS' THEN '1'
+    WHEN 'FAILED' THEN '2'
+    WHEN 'SENDING' THEN '3'
+    ELSE send_status
+END
+WHERE send_status IN ('PENDING', 'SENT', 'SUCCESS', 'FAILED', 'SENDING');
+
+UPDATE dc_cook_complaint
+SET status = CASE UPPER(status)
+    WHEN 'PENDING' THEN '0'
+    WHEN 'ESTABLISHED' THEN '1'
+    WHEN 'REJECTED' THEN '2'
+    ELSE status
+END
+WHERE status IN ('PENDING', 'ESTABLISHED', 'REJECTED');
+
+UPDATE dc_cook_settlement
+SET status = CASE UPPER(status)
+    WHEN 'GENERATED' THEN '0'
+    WHEN 'MANUAL' THEN '0'
+    WHEN 'REVIEWING' THEN '1'
+    WHEN 'CONFIRMED' THEN '2'
+    WHEN 'PAID' THEN '3'
+    WHEN 'PAID_OFFLINE' THEN '3'
+    ELSE status
+END
+WHERE status IN ('GENERATED', 'MANUAL', 'REVIEWING', 'CONFIRMED', 'PAID', 'PAID_OFFLINE');
+
+UPDATE dc_cook_support_ticket
+SET status = CASE UPPER(status)
+    WHEN 'PENDING' THEN '0'
+    WHEN 'REPLIED' THEN '1'
+    WHEN 'CLOSED' THEN '2'
+    ELSE status
+END
+WHERE status IN ('PENDING', 'REPLIED', 'CLOSED');
 
 -- ----------------------------
 -- 小程序认证客户端

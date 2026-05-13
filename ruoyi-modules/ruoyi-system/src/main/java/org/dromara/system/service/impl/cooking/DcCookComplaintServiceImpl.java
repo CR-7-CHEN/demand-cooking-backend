@@ -49,6 +49,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     public DcCookComplaintVo queryById(Long complaintId) {
         DcCookComplaintVo vo = baseMapper.selectVoById(complaintId);
         if (vo != null) {
+            normalizeReadStatus(vo);
             hydrateDisplayNames(List.of(vo));
         }
         return vo;
@@ -57,6 +58,9 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     @Override
     public TableDataInfo<DcCookComplaintVo> queryPageList(DcCookComplaintBo bo, PageQuery pageQuery) {
         Page<DcCookComplaintVo> page = baseMapper.selectVoPage(pageQuery.build(), buildQueryWrapper(bo));
+        if (page.getRecords() != null) {
+            page.getRecords().forEach(this::normalizeReadStatus);
+        }
         hydrateDisplayNames(page.getRecords());
         return TableDataInfo.build(page);
     }
@@ -64,7 +68,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     @Override
     public Boolean submit(DcCookComplaintBo bo) {
         DcCookOrder order = orderMapper.selectById(bo.getOrderId());
-        if (order == null || !DcCookOrderStatus.COMPLETED.equals(order.getStatus())) {
+        if (order == null || !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.COMPLETED)) {
             throw new ServiceException("only completed order can be complained");
         }
         if (!Objects.equals(order.getUserId(), bo.getUserId())) {
@@ -82,6 +86,9 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     @Transactional(rollbackFor = Exception.class)
     @Override
     public Boolean handle(DcCookComplaintBo bo) {
+        if (StringUtils.isBlank(bo.getHandleResult())) {
+            throw new ServiceException("处理说明不能为空");
+        }
         DcCookComplaint complaint = baseMapper.selectById(bo.getComplaintId());
         if (complaint == null) {
             throw new ServiceException("complaint not found");
@@ -91,7 +98,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
         complaint.setHandlerId(bo.getHandlerId());
         complaint.setHandleTime(new Date());
         boolean ok = baseMapper.updateById(complaint) > 0;
-        if (DcCookComplaintStatus.ESTABLISHED.equals(complaint.getStatus())) {
+        if (DcCookComplaintStatus.matches(complaint.getStatus(), DcCookComplaintStatus.ESTABLISHED)) {
             DcCookReview review = reviewMapper.selectOne(Wrappers.lambdaQuery(DcCookReview.class)
                 .eq(DcCookReview::getOrderId, complaint.getOrderId())
                 .last("limit 1"), false);
@@ -120,7 +127,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
             List<Long> chefIds = resolveChefIds(bo.getChefName());
             lqw.in(DcCookComplaint::getChefId, chefIds.isEmpty() ? List.of(-1L) : chefIds);
         }
-        lqw.eq(StringUtils.isNotBlank(bo.getStatus()), DcCookComplaint::getStatus, bo.getStatus());
+        lqw.in(StringUtils.isNotBlank(bo.getStatus()), DcCookComplaint::getStatus, DcCookComplaintStatus.compatibleStatuses(bo.getStatus()));
         lqw.eq(StringUtils.isNotBlank(bo.getComplaintType()), DcCookComplaint::getComplaintType, bo.getComplaintType());
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
             DcCookComplaint::getCreateTime, params.get("beginTime"), params.get("endTime"));
@@ -189,5 +196,12 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private DcCookComplaintVo normalizeReadStatus(DcCookComplaintVo vo) {
+        if (vo != null) {
+            vo.setStatus(DcCookComplaintStatus.normalize(vo.getStatus()));
+        }
+        return vo;
     }
 }

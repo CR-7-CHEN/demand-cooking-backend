@@ -73,6 +73,10 @@ public class DcCookChefVo implements Serializable {
 
     private String auditReason;
 
+    private Long auditBy;
+
+    private Date auditTime;
+
     @ExcelProperty(value = "Chef Status")
     private String chefStatus;
 

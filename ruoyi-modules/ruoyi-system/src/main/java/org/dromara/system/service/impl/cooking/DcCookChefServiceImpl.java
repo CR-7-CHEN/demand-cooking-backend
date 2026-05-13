@@ -10,10 +10,12 @@ import org.dromara.common.core.utils.MapstructUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.mybatis.core.page.TableDataInfo;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.bo.cooking.DcCookChefBo;
 import org.dromara.system.domain.bo.cooking.DcCookChefTimeBo;
 import org.dromara.system.domain.cooking.DcCookChef;
+import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.cooking.DcCookChefTime;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
@@ -58,13 +60,13 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private static final String MEAL_PERIOD_BREAKFAST = "breakfast";
     private static final String MEAL_PERIOD_LUNCH = "lunch";
     private static final String MEAL_PERIOD_DINNER = "dinner";
-    private static final String AUDIT_APPROVED = "1";
-    private static final String AUDIT_PENDING = "0";
-    private static final String AUDIT_REJECTED = "2";
-    private static final String STATUS_NORMAL = "0";
-    private static final String STATUS_PAUSED = "1";
-    private static final String STATUS_DISABLED = "2";
-    private static final String STATUS_RESIGNED = "3";
+    private static final String AUDIT_APPROVED = DcCookChefStatus.AUDIT_APPROVED;
+    private static final String AUDIT_PENDING = DcCookChefStatus.AUDIT_PENDING;
+    private static final String AUDIT_REJECTED = DcCookChefStatus.AUDIT_REJECTED;
+    private static final String STATUS_NORMAL = DcCookChefStatus.NORMAL;
+    private static final String STATUS_PAUSED = DcCookChefStatus.PAUSED;
+    private static final String STATUS_DISABLED = DcCookChefStatus.DISABLED;
+    private static final String STATUS_RESIGNED = DcCookChefStatus.RESIGNED;
 
     private final DcCookChefMapper baseMapper;
     private final DcCookChefTimeMapper chefTimeMapper;
@@ -117,7 +119,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         DcCookChefWorkbenchVo vo = new DcCookChefWorkbenchVo();
         vo.setChefStatus(chef.getChefStatus());
         vo.setAuditStatus(chef.getAuditStatus());
-        vo.setTakingOrders(STATUS_NORMAL.equals(chef.getChefStatus()));
+        vo.setTakingOrders(DcCookChefStatus.matchesChefStatus(chef.getChefStatus(), STATUS_NORMAL));
         vo.setRevenueOverview(buildRevenueOverview(chef, todayStart, tomorrowStart, monthStart, nextMonthStart));
         vo.setOrderReminderCount(buildOrderReminderCount(chef.getChefId()));
         vo.setOrderTotalCount(buildOrderTotalCount(chef.getChefId()));
@@ -196,8 +198,10 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         lqw.and(StringUtils.isNotBlank(keyword),
             wrapper -> wrapper.like(DcCookChef::getChefName, keyword).or().like(DcCookChef::getSkillTags, keyword));
         lqw.eq(StringUtils.isNotBlank(bo.getMobile()), DcCookChef::getMobile, bo.getMobile());
-        lqw.eq(StringUtils.isNotBlank(bo.getAuditStatus()), DcCookChef::getAuditStatus, bo.getAuditStatus());
-        lqw.eq(StringUtils.isNotBlank(bo.getChefStatus()), DcCookChef::getChefStatus, bo.getChefStatus());
+        lqw.in(StringUtils.isNotBlank(bo.getAuditStatus()), DcCookChef::getAuditStatus,
+            DcCookChefStatus.compatibleAuditStatuses(bo.getAuditStatus()));
+        lqw.in(StringUtils.isNotBlank(bo.getChefStatus()), DcCookChef::getChefStatus,
+            DcCookChefStatus.compatibleChefStatuses(bo.getChefStatus()));
         lqw.like(StringUtils.isNotBlank(bo.getSkillTags()), DcCookChef::getSkillTags, bo.getSkillTags());
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
             DcCookChef::getCreateTime, params.get("beginTime"), params.get("endTime"));
@@ -208,16 +212,16 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private LambdaQueryWrapper<DcCookChef> buildAppWrapper(DcCookChefBo bo) {
         Date today = Date.from(LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant());
         LambdaQueryWrapper<DcCookChef> lqw = buildQueryWrapper(bo);
-        lqw.eq(DcCookChef::getAuditStatus, AUDIT_APPROVED);
-        lqw.eq(DcCookChef::getChefStatus, STATUS_NORMAL);
+        lqw.in(DcCookChef::getAuditStatus, DcCookChefStatus.compatibleAuditStatuses(AUDIT_APPROVED));
+        lqw.in(DcCookChef::getChefStatus, DcCookChefStatus.compatibleChefStatuses(STATUS_NORMAL));
         lqw.ge(DcCookChef::getHealthCertExpireDate, today);
         lqw.apply("chef_id in ("
                 + "select chef_id "
                 + "from dc_cook_order "
                 + "where del_flag = '0' "
-                + "and status = {0}"
+                + "and status in ({0}, {1})"
                 + ")",
-            DcCookOrderStatus.COMPLETED);
+            DcCookOrderStatus.COMPLETED, DcCookOrderStatus.LEGACY_COMPLETED);
         applyMealPeriodFilter(lqw, bo.getMealPeriod());
         lqw.orderByDesc(DcCookChef::getCompletedOrders)
             .orderByDesc(DcCookChef::getRating)
@@ -266,10 +270,16 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         }
         validateUserPhoneAvailable(bo);
         DcCookChef add = MapstructUtils.convert(bo, DcCookChef.class);
-        if (add.getAuditStatus() == null) {
+        if (StringUtils.isNotBlank(add.getAuditStatus())) {
+            add.setAuditStatus(DcCookChefStatus.normalizeAuditStatus(add.getAuditStatus()));
+        }
+        if (StringUtils.isNotBlank(add.getChefStatus())) {
+            add.setChefStatus(DcCookChefStatus.normalizeChefStatus(add.getChefStatus()));
+        }
+        if (StringUtils.isBlank(add.getAuditStatus())) {
             add.setAuditStatus(AUDIT_PENDING);
         }
-        if (add.getChefStatus() == null) {
+        if (StringUtils.isBlank(add.getChefStatus())) {
             add.setChefStatus(STATUS_NORMAL);
         }
         if (add.getBaseSalary() == null) {
@@ -300,7 +310,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
             .eq(DcCookChef::getUserId, userId)
             .orderByDesc(DcCookChef::getCreateTime)
             .last("limit 1"), false);
-        if (existing != null && AUDIT_PENDING.equals(existing.getAuditStatus())) {
+        if (existing != null && DcCookChefStatus.matchesAuditStatus(existing.getAuditStatus(), AUDIT_PENDING)) {
             throw new ServiceException("当前入驻申请正在审核中，请勿重复提交");
         }
     }
@@ -314,7 +324,13 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         validateUserPhoneAvailable(bo);
         String resignReason = normalizeResignReason(bo.getChefStatus(), bo.getResignReason());
         DcCookChef update = MapstructUtils.convert(bo, DcCookChef.class);
-        if (STATUS_RESIGNED.equals(bo.getChefStatus())) {
+        if (StringUtils.isNotBlank(update.getAuditStatus())) {
+            update.setAuditStatus(DcCookChefStatus.normalizeAuditStatus(update.getAuditStatus()));
+        }
+        if (StringUtils.isNotBlank(update.getChefStatus())) {
+            update.setChefStatus(DcCookChefStatus.normalizeChefStatus(update.getChefStatus()));
+        }
+        if (DcCookChefStatus.matchesChefStatus(bo.getChefStatus(), STATUS_RESIGNED)) {
             update.setResignReason(resignReason);
         }
         boolean updated = baseMapper.updateById(update) > 0;
@@ -369,25 +385,37 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (bo.getChefId() == null) {
             throw new ServiceException("chefId is required");
         }
-        if (!AUDIT_APPROVED.equals(bo.getAuditStatus()) && !AUDIT_REJECTED.equals(bo.getAuditStatus())
-            && !AUDIT_PENDING.equals(bo.getAuditStatus())) {
+        String auditStatus = DcCookChefStatus.normalizeAuditStatus(bo.getAuditStatus());
+        if (!DcCookChefStatus.isValidAuditStatus(auditStatus)) {
             throw new ServiceException("invalid auditStatus");
         }
-        if (AUDIT_REJECTED.equals(bo.getAuditStatus()) && StringUtils.isBlank(bo.getAuditReason())) {
+        if (AUDIT_REJECTED.equals(auditStatus) && StringUtils.isBlank(bo.getAuditReason())) {
             throw new ServiceException("auditReason is required");
         }
+        Long auditBy = resolveAuditBy(bo);
+        Date auditTime = new Date();
         var update = Wrappers.lambdaUpdate(DcCookChef.class)
             .eq(DcCookChef::getChefId, bo.getChefId())
-            .set(DcCookChef::getAuditStatus, bo.getAuditStatus());
-        if (AUDIT_REJECTED.equals(bo.getAuditStatus())) {
+            .set(DcCookChef::getAuditStatus, auditStatus)
+            .set(DcCookChef::getAuditBy, auditBy)
+            .set(DcCookChef::getAuditTime, auditTime);
+        if (AUDIT_REJECTED.equals(auditStatus)) {
             update.set(DcCookChef::getAuditReason, bo.getAuditReason().trim());
         } else {
             update.set(DcCookChef::getAuditReason, null);
         }
-        if (AUDIT_APPROVED.equals(bo.getAuditStatus()) && StringUtils.isBlank(bo.getChefStatus())) {
+        if (AUDIT_APPROVED.equals(auditStatus) && StringUtils.isBlank(bo.getChefStatus())) {
             update.set(DcCookChef::getChefStatus, STATUS_NORMAL);
         }
         return baseMapper.update(null, update) > 0;
+    }
+
+    private Long resolveAuditBy(DcCookChefBo bo) {
+        Long userId = LoginHelper.getUserId();
+        if (userId != null) {
+            return userId;
+        }
+        return bo.getUpdateBy();
     }
 
     @Override
@@ -395,9 +423,8 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
         if (bo.getChefId() == null) {
             throw new ServiceException("chefId is required");
         }
-        String status = bo.getChefStatus();
-        if (!STATUS_NORMAL.equals(status) && !STATUS_PAUSED.equals(status)
-            && !STATUS_DISABLED.equals(status) && !STATUS_RESIGNED.equals(status)) {
+        String status = DcCookChefStatus.normalizeChefStatus(bo.getChefStatus());
+        if (!DcCookChefStatus.isValidChefStatus(status)) {
             throw new ServiceException("invalid chefStatus");
         }
         if ((STATUS_PAUSED.equals(status) || STATUS_RESIGNED.equals(status)) && hasUnfinishedOrder(bo.getChefId())) {
@@ -427,7 +454,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     @Override
     public Boolean resume(Long userId) {
         DcCookChef chef = requireChefByUserId(userId);
-        if (!AUDIT_APPROVED.equals(chef.getAuditStatus())) {
+        if (!DcCookChefStatus.matchesAuditStatus(chef.getAuditStatus(), AUDIT_APPROVED)) {
             throw new ServiceException("chef audit is not approved");
         }
         chef.setChefStatus(STATUS_NORMAL);
@@ -483,7 +510,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     }
 
     private String normalizeResignReason(String status, String resignReason) {
-        if (!STATUS_RESIGNED.equals(status)) {
+        if (!DcCookChefStatus.matchesChefStatus(status, STATUS_RESIGNED)) {
             return resignReason;
         }
         String reason = resignReason == null ? null : resignReason.trim();
@@ -546,7 +573,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
 
         Long todayServiceCount = orderMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chef.getChefId())
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.WAITING_SERVICE)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.WAITING_SERVICE))
             .ge(DcCookOrder::getServiceStartTime, todayStart)
             .lt(DcCookOrder::getServiceStartTime, tomorrowStart));
         if (todayServiceCount > 0) {
@@ -602,7 +629,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private Long countOrdersByStatus(Long chefId, String status) {
         return orderMapper.selectCount(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
-            .eq(DcCookOrder::getStatus, status));
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(status)));
     }
 
     private DcCookChefWorkbenchVo.AlertItem alert(String key, String title, String content, String tone, Long count) {
@@ -633,7 +660,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private List<DcCookOrder> selectCompletedOrdersInRange(Long chefId, Date start, Date end) {
         return orderMapper.selectList(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
-            .eq(DcCookOrder::getStatus, DcCookOrderStatus.COMPLETED)
+            .in(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.COMPLETED))
             .and(wrapper -> wrapper
                 .ge(DcCookOrder::getCompleteTime, start)
                 .lt(DcCookOrder::getCompleteTime, end)
@@ -699,8 +726,9 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
 
     private DcCookChef requireAvailableWorkbenchChef(Long userId) {
         DcCookChef chef = requireChefByUserId(userId);
-        if (!AUDIT_APPROVED.equals(chef.getAuditStatus())
-            || (!STATUS_NORMAL.equals(chef.getChefStatus()) && !STATUS_PAUSED.equals(chef.getChefStatus()))) {
+        if (!DcCookChefStatus.matchesAuditStatus(chef.getAuditStatus(), AUDIT_APPROVED)
+            || (!DcCookChefStatus.matchesChefStatus(chef.getChefStatus(), STATUS_NORMAL)
+            && !DcCookChefStatus.matchesChefStatus(chef.getChefStatus(), STATUS_PAUSED))) {
             throw new ServiceException("服务厨师审核通过后可访问该功能", HttpStatus.FORBIDDEN);
         }
         return chef;
@@ -731,7 +759,7 @@ public class DcCookChefServiceImpl implements IDcCookChefService {
     private boolean hasUnfinishedOrder(Long chefId) {
         return orderMapper.exists(Wrappers.lambdaQuery(DcCookOrder.class)
             .eq(DcCookOrder::getChefId, chefId)
-            .notIn(DcCookOrder::getStatus, DcCookOrderStatus.TERMINAL_STATUSES));
+            .notIn(DcCookOrder::getStatus, DcCookOrderStatus.compatibleStatuses(DcCookOrderStatus.TERMINAL_STATUSES)));
     }
 
     private void hydrateAvailableTimes(List<DcCookChefVo> records) {

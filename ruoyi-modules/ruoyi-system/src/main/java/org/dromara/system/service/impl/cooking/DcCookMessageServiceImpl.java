@@ -12,6 +12,7 @@ import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.bo.cooking.DcCookMessageBo;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookMessage;
+import org.dromara.system.domain.cooking.DcCookMessageStatus;
 import org.dromara.system.domain.vo.cooking.DcCookMessageVo;
 import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
@@ -38,6 +39,7 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
     public DcCookMessageVo queryById(Long messageId) {
         DcCookMessageVo vo = baseMapper.selectVoById(messageId);
         if (vo != null) {
+            normalizeReadStatus(vo);
             hydrateReceiverNames(List.of(vo));
         }
         return vo;
@@ -46,6 +48,9 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
     @Override
     public TableDataInfo<DcCookMessageVo> queryPageList(DcCookMessageBo bo, PageQuery pageQuery) {
         Page<DcCookMessageVo> page = baseMapper.selectVoPage(pageQuery.build(), buildQueryWrapper(bo));
+        if (page.getRecords() != null) {
+            page.getRecords().forEach(this::normalizeReadStatus);
+        }
         hydrateReceiverNames(page.getRecords());
         return TableDataInfo.build(page);
     }
@@ -53,6 +58,7 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
     @Override
     public List<DcCookMessageVo> queryList(DcCookMessageBo bo) {
         List<DcCookMessageVo> list = baseMapper.selectVoList(buildQueryWrapper(bo));
+        list.forEach(this::normalizeReadStatus);
         hydrateReceiverNames(list);
         return list;
     }
@@ -61,7 +67,9 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
     public Boolean insertByBo(DcCookMessageBo bo) {
         DcCookMessage add = MapstructUtils.convert(bo, DcCookMessage.class);
         if (StringUtils.isBlank(add.getSendStatus())) {
-            add.setSendStatus("SENT");
+            add.setSendStatus(DcCookMessageStatus.SENT);
+        } else {
+            add.setSendStatus(DcCookMessageStatus.normalize(add.getSendStatus()));
         }
         if (add.getSendTime() == null) {
             add.setSendTime(new Date());
@@ -72,6 +80,9 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
     @Override
     public Boolean updateByBo(DcCookMessageBo bo) {
         DcCookMessage update = MapstructUtils.convert(bo, DcCookMessage.class);
+        if (StringUtils.isNotBlank(update.getSendStatus())) {
+            update.setSendStatus(DcCookMessageStatus.normalize(update.getSendStatus()));
+        }
         return baseMapper.updateById(update) > 0;
     }
 
@@ -91,7 +102,8 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
         applyReceiverKeywordFilter(lqw, bo.getReceiverKeyword());
         lqw.eq(bo.getRelatedOrderId() != null, DcCookMessage::getRelatedOrderId, bo.getRelatedOrderId());
         lqw.eq(StringUtils.isNotBlank(bo.getRelatedOrderNo()), DcCookMessage::getRelatedOrderNo, bo.getRelatedOrderNo());
-        lqw.eq(StringUtils.isNotBlank(bo.getSendStatus()), DcCookMessage::getSendStatus, bo.getSendStatus());
+        lqw.in(StringUtils.isNotBlank(bo.getSendStatus()), DcCookMessage::getSendStatus,
+            DcCookMessageStatus.compatibleStatuses(bo.getSendStatus()));
         lqw.between(params.get("beginTime") != null && params.get("endTime") != null,
             DcCookMessage::getSendTime, params.get("beginTime"), params.get("endTime"));
         lqw.orderByDesc(DcCookMessage::getCreateTime);
@@ -211,5 +223,12 @@ public class DcCookMessageServiceImpl implements IDcCookMessageService {
 
     private boolean isUserReceiver(String receiverType) {
         return "USER".equalsIgnoreCase(receiverType) || "ADMIN".equalsIgnoreCase(receiverType);
+    }
+
+    private DcCookMessageVo normalizeReadStatus(DcCookMessageVo vo) {
+        if (vo != null) {
+            vo.setSendStatus(DcCookMessageStatus.normalize(vo.getSendStatus()));
+        }
+        return vo;
     }
 }

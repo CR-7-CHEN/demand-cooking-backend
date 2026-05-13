@@ -1,6 +1,7 @@
 package org.dromara.test.cooking;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -8,6 +9,7 @@ import org.dromara.common.core.constant.HttpStatus;
 import org.dromara.common.core.exception.ServiceException;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookOrder;
+import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.cooking.DcCookSettlement;
 import org.dromara.system.domain.vo.cooking.DcCookChefWorkbenchVo;
 import org.dromara.system.mapper.SysUserMapper;
@@ -229,9 +231,11 @@ public class DcCookChefWorkbenchTest {
                 return false;
             }
             String sqlSegment = wrapper.getSqlSegment();
+            AbstractWrapper<?, ?, ?> abstractWrapper = wrapper instanceof AbstractWrapper<?, ?, ?> candidate ? candidate : null;
             return sqlSegment != null
                 && !sqlSegment.contains("serviceStartTime")
-                && wrapper.getParamNameValuePairs().containsValue("WAITING_SERVICE");
+                && abstractWrapper != null
+                && abstractWrapper.getParamNameValuePairs().containsValue(DcCookOrderStatus.WAITING_SERVICE);
         }))).thenReturn(2L);
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(settlementMapper.selectOne(any(Wrapper.class), eq(false))).thenReturn(null);

@@ -59,7 +59,7 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
     @Override
     public Boolean submit(DcCookReviewBo bo) {
         DcCookOrder order = orderMapper.selectById(bo.getOrderId());
-        if (order == null || !DcCookOrderStatus.COMPLETED.equals(order.getStatus())) {
+        if (order == null || !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.COMPLETED)) {
             throw new ServiceException("only completed order can be reviewed");
         }
         if (!Objects.equals(order.getUserId(), bo.getUserId())) {
