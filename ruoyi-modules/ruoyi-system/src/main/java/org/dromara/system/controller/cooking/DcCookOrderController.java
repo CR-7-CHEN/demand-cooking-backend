@@ -155,7 +155,7 @@ public class DcCookOrderController {
         boolean readable = DcCookPermissionHelper.ownsOrder(loginUserId, order.getUserId())
             || DcCookPermissionHelper.servesOrder(chef == null ? null : chef.getChefId(), order.getChefId());
         if (!readable) {
-            throw new ServiceException("no permission to access this order");
+            throw new ServiceException("无权查看该订单");
         }
     }
 
@@ -165,23 +165,23 @@ public class DcCookOrderController {
 
     private void assertUserOrder(Long orderId) {
         if (orderId == null) {
-            throw new ServiceException("orderId is required");
+            throw new ServiceException("订单ID不能为空");
         }
         DcCookOrderVo order = orderService.queryById(orderId);
         if (order == null || !DcCookPermissionHelper.ownsOrder(LoginHelper.getUserId(), order.getUserId())) {
-            throw new ServiceException("no permission to operate this order");
+            throw new ServiceException("无权操作该订单");
         }
     }
 
     private void assertChefOrder(DcCookOrderActionBo bo) {
         if (bo.getOrderId() == null) {
-            throw new ServiceException("orderId is required");
+            throw new ServiceException("订单ID不能为空");
         }
         DcCookOrderVo order = orderService.queryById(bo.getOrderId());
         DcCookChefVo chef = chefService.queryByUserId(LoginHelper.getUserId());
         Long chefId = chef == null ? null : chef.getChefId();
         if (order == null || !DcCookPermissionHelper.servesOrder(chefId, order.getChefId())) {
-            throw new ServiceException("no permission to operate this order");
+            throw new ServiceException("无权操作该订单");
         }
         bo.setChefId(chefId);
     }

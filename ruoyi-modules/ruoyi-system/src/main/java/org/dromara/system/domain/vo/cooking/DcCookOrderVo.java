@@ -57,6 +57,18 @@ public class DcCookOrderVo implements Serializable {
 
     private String status;
 
+    private Long reviewId;
+
+    private Boolean reviewed;
+
+    private String reviewStatusText;
+
+    private Long complaintId;
+
+    private Boolean complained;
+
+    private String complaintStatusText;
+
     private BigDecimal quoteAmount;
 
     private String quoteRemark;

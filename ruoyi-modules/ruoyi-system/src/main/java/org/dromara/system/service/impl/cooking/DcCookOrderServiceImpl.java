@@ -15,19 +15,23 @@ import org.dromara.system.domain.bo.cooking.DcCookOrderBo;
 import org.dromara.system.domain.cooking.DcCookAddress;
 import org.dromara.system.domain.cooking.DcCookChef;
 import org.dromara.system.domain.cooking.DcCookChefTime;
+import org.dromara.system.domain.cooking.DcCookComplaint;
 import org.dromara.system.domain.cooking.DcCookMessage;
 import org.dromara.system.domain.cooking.DcCookMessageStatus;
 import org.dromara.system.domain.cooking.DcCookOrder;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.cooking.DcCookChefStatus;
+import org.dromara.system.domain.cooking.DcCookReview;
 import org.dromara.system.domain.vo.cooking.DcCookOrderCancelPreviewVo;
 import org.dromara.system.domain.vo.cooking.DcCookOrderVo;
 import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.mapper.cooking.DcCookAddressMapper;
 import org.dromara.system.mapper.cooking.DcCookChefMapper;
 import org.dromara.system.mapper.cooking.DcCookChefTimeMapper;
+import org.dromara.system.mapper.cooking.DcCookComplaintMapper;
 import org.dromara.system.mapper.cooking.DcCookMessageMapper;
 import org.dromara.system.mapper.cooking.DcCookOrderMapper;
+import org.dromara.system.mapper.cooking.DcCookReviewMapper;
 import org.dromara.system.service.cooking.IDcCookConfigService;
 import org.dromara.system.service.cooking.IDcCookOrderService;
 import org.springframework.stereotype.Service;
@@ -66,6 +70,8 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
     private final DcCookChefTimeMapper chefTimeMapper;
     private final DcCookAddressMapper addressMapper;
     private final DcCookMessageMapper messageMapper;
+    private final DcCookReviewMapper reviewMapper;
+    private final DcCookComplaintMapper complaintMapper;
     private final SysUserMapper userMapper;
     private final IDcCookConfigService configService;
 
@@ -75,6 +81,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         if (vo != null) {
             normalizeReadStatus(vo);
             hydrateDisplayNames(List.of(vo));
+            hydrateReviewComplaintStatus(vo);
         }
         return vo;
     }
@@ -239,14 +246,9 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
             throw new ServiceException("service has already started");
         }
         Date startedAt = new Date();
-        if (order.getServiceStartTime() != null && startedAt.before(order.getServiceStartTime())) {
-            throw new ServiceException("service start time not reached");
-        }
         order.setServiceStartedFlag("1");
         order.setServiceStartedTime(startedAt);
-        boolean ok = baseMapper.updateById(order) > 0;
-        recordMessage("SERVICE_START", "USER", order.getUserId(), order, "Chef started cooking service");
-        return ok;
+        return baseMapper.updateById(order) > 0;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -461,7 +463,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
 
     private void assertStatus(DcCookOrder order, String status) {
         if (!DcCookOrderStatus.matches(order.getStatus(), status)) {
-            throw new ServiceException("invalid order status");
+            throw new ServiceException("订单状态不正确");
         }
     }
 
@@ -480,7 +482,7 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
         Date now = new Date();
         Date earliest = addMinutes(now, getIntConfig("cooking.reserve.min.advance.minutes", DEFAULT_RESERVE_MIN_ADVANCE_MINUTES));
         if (startTime.before(earliest)) {
-            throw new ServiceException("reservation time is too close");
+            throw new ServiceException("预约时间过近");
         }
         Date latest = addDays(now, getIntConfig("cooking.reserve.future.days", DEFAULT_RESERVE_FUTURE_DAYS));
         if (startTime.after(latest)) {
@@ -753,6 +755,27 @@ public class DcCookOrderServiceImpl implements IDcCookOrderService {
                 record.setChefName(chef.getChefName());
             }
         });
+    }
+
+    private void hydrateReviewComplaintStatus(DcCookOrderVo vo) {
+        DcCookReview review = reviewMapper.selectOne(Wrappers.lambdaQuery(DcCookReview.class)
+            .select(DcCookReview::getReviewId)
+            .eq(DcCookReview::getOrderId, vo.getOrderId())
+            .last("limit 1"));
+        boolean reviewed = review != null && review.getReviewId() != null;
+        vo.setReviewId(reviewed ? review.getReviewId() : null);
+        vo.setReviewed(reviewed);
+        vo.setReviewStatusText(reviewed ? "已评价" : "未评价");
+
+        DcCookComplaint complaint = complaintMapper.selectOne(Wrappers.lambdaQuery(DcCookComplaint.class)
+            .select(DcCookComplaint::getComplaintId)
+            .eq(DcCookComplaint::getOrderId, vo.getOrderId())
+            .orderByDesc(DcCookComplaint::getSubmitTime)
+            .last("limit 1"));
+        boolean complained = complaint != null && complaint.getComplaintId() != null;
+        vo.setComplaintId(complained ? complaint.getComplaintId() : null);
+        vo.setComplained(complained);
+        vo.setComplaintStatusText(complained ? "已投诉" : "未投诉");
     }
 
     private DcCookOrderVo normalizeReadStatus(DcCookOrderVo vo) {

@@ -60,15 +60,15 @@ public class DcCookReviewServiceImpl implements IDcCookReviewService {
     public Boolean submit(DcCookReviewBo bo) {
         DcCookOrder order = orderMapper.selectById(bo.getOrderId());
         if (order == null || !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.COMPLETED)) {
-            throw new ServiceException("only completed order can be reviewed");
+            throw new ServiceException("仅已完成订单可评价");
         }
         if (!Objects.equals(order.getUserId(), bo.getUserId())) {
-            throw new ServiceException("no permission to review this order");
+            throw new ServiceException("无权评价该订单");
         }
         boolean exists = baseMapper.exists(Wrappers.lambdaQuery(DcCookReview.class)
             .eq(DcCookReview::getOrderId, bo.getOrderId()));
         if (exists) {
-            throw new ServiceException("order already reviewed");
+            throw new ServiceException("订单已评价");
         }
         DcCookReview add = MapstructUtils.convert(bo, DcCookReview.class);
         add.setOrderNo(order.getOrderNo());

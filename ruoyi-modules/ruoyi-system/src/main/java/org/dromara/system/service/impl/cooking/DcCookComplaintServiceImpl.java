@@ -69,10 +69,10 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
     public Boolean submit(DcCookComplaintBo bo) {
         DcCookOrder order = orderMapper.selectById(bo.getOrderId());
         if (order == null || !DcCookOrderStatus.matches(order.getStatus(), DcCookOrderStatus.COMPLETED)) {
-            throw new ServiceException("only completed order can be complained");
+            throw new ServiceException("仅已完成订单可投诉");
         }
         if (!Objects.equals(order.getUserId(), bo.getUserId())) {
-            throw new ServiceException("no permission to complain this order");
+            throw new ServiceException("无权投诉该订单");
         }
         DcCookComplaint add = MapstructUtils.convert(bo, DcCookComplaint.class);
         add.setOrderNo(order.getOrderNo());
@@ -91,7 +91,7 @@ public class DcCookComplaintServiceImpl implements IDcCookComplaintService {
         }
         DcCookComplaint complaint = baseMapper.selectById(bo.getComplaintId());
         if (complaint == null) {
-            throw new ServiceException("complaint not found");
+            throw new ServiceException("投诉记录不存在");
         }
         complaint.setStatus(Boolean.TRUE.equals(bo.getEstablished()) ? DcCookComplaintStatus.ESTABLISHED : DcCookComplaintStatus.REJECTED);
         complaint.setHandleResult(bo.getHandleResult());
