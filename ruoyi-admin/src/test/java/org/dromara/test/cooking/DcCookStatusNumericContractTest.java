@@ -5,7 +5,6 @@ import org.dromara.system.domain.cooking.DcCookChefStatus;
 import org.dromara.system.domain.cooking.DcCookMessageStatus;
 import org.dromara.system.domain.cooking.DcCookOrderStatus;
 import org.dromara.system.domain.cooking.DcCookSettlementStatus;
-import org.dromara.system.domain.cooking.DcCookSupportTicketStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,9 +46,6 @@ class DcCookStatusNumericContractTest {
         assertEquals("1", DcCookMessageStatus.SENT);
         assertEquals("2", DcCookMessageStatus.FAILED);
         assertEquals("3", DcCookMessageStatus.SENDING);
-        assertEquals("0", DcCookSupportTicketStatus.PENDING);
-        assertEquals("1", DcCookSupportTicketStatus.REPLIED);
-        assertEquals("2", DcCookSupportTicketStatus.CLOSED);
 
         List<String> orderStatuses = List.of(
             DcCookOrderStatus.WAITING_RESPONSE,

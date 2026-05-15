@@ -33,24 +33,18 @@ const serviceDir = path.join(
 )
 const sqlSource = fs.readFileSync(path.join(repoRoot, 'script', 'sql', 'demand_cooking.sql'), 'utf8')
 
-test('message and support ticket statuses use numeric storage with legacy compatibility', () => {
+test('message statuses use numeric storage with legacy compatibility', () => {
   const messageStatus = fs.readFileSync(path.join(statusDir, 'DcCookMessageStatus.java'), 'utf8')
-  const ticketStatus = fs.readFileSync(path.join(statusDir, 'DcCookSupportTicketStatus.java'), 'utf8')
   const messageService = fs.readFileSync(path.join(serviceDir, 'DcCookMessageServiceImpl.java'), 'utf8')
   const orderService = fs.readFileSync(path.join(serviceDir, 'DcCookOrderServiceImpl.java'), 'utf8')
-  const supportService = fs.readFileSync(path.join(serviceDir, 'DcCookSupportServiceImpl.java'), 'utf8')
 
   assert.match(messageStatus, /PENDING = "0"/)
   assert.match(messageStatus, /SENT = "1"/)
   assert.match(messageStatus, /FAILED = "2"/)
   assert.match(messageStatus, /SENDING = "3"/)
-  assert.match(ticketStatus, /PENDING = "0"/)
-  assert.match(ticketStatus, /REPLIED = "1"/)
-  assert.match(ticketStatus, /CLOSED = "2"/)
   assert.match(messageService, /DcCookMessageStatus\.compatibleStatuses\(bo\.getSendStatus\(\)\)/)
   assert.match(orderService, /message\.setSendStatus\(DcCookMessageStatus\.SENT\)/)
   assert.doesNotMatch(orderService, /message\.setSendStatus\("SENT"\)/)
-  assert.match(supportService, /DcCookSupportTicketStatus\.compatibleStatuses\(bo\.getStatus\(\)\)/)
 })
 
 test('init sql stores remaining cooking status fields as numeric defaults', () => {
